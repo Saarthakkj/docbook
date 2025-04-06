@@ -15,6 +15,8 @@ from crawl4ai.deep_crawling.filters import (
 from crawl4ai.deep_crawling.scorers import (
     KeywordRelevanceScorer,
 )
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
 
 
 # 1️⃣ Basic Deep Crawl Setup
@@ -35,20 +37,33 @@ async def basic_deep_crawl():
     config = CrawlerRunConfig(
         deep_crawl_strategy=BFSDeepCrawlStrategy(max_depth=2, include_external=False),
         scraping_strategy=LXMLWebScrapingStrategy(),
+        markdown_generator=DefaultMarkdownGenerator(),
         verbose=True,  # Show progress during crawling
     )
 
     async with AsyncWebCrawler() as crawler:
+
         start_time = time.perf_counter()
         results = await crawler.arun(url="https://docs.crawl4ai.com", config=config)
 
         # Group results by depth to visualize the crawl tree
         pages_by_depth = {}
+        markdowns = {}
         for result in results:
             depth = result.metadata.get("depth", 0)
             if depth not in pages_by_depth:
                 pages_by_depth[depth] = []
+                markdowns[depth] = []
             pages_by_depth[depth].append(result.url)
+            markdowns[depth].append(result.markdown)
+
+
+
+        #---------Removing duplicate elements from markdown 
+        fil_markdowns = {}
+        for k,v  in markdowns.items():
+            if v not in fil_markdowns.values():
+                fil_markdowns[k] = v
 
         print(f"✅ Crawled {len(results)} pages total")
 
@@ -61,6 +76,14 @@ async def basic_deep_crawl():
             if len(urls) > 3:
                 print(f"  ... and {len(urls) - 3} more")
 
+
+        for depth , markdowns in sorted(fil_markdowns.items()):
+            print(f"\n depth {depth}  pages")
+            for markdown in markdowns[:10]:
+                print(f" \n ---- markdown first 1000 characters----")
+                print(markdown[:1000])
+            if(len(markdowns)>10):
+                print(f" .... and other markdown pages ")
         print(
             f"\n✅ Performance: {len(results)} pages in {time.perf_counter() - start_time:.2f} seconds"
         )
