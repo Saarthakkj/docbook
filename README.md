@@ -23,7 +23,7 @@ This tool uses [crawl4ai](https://docs.crawl4ai.com) to perform a deep breadth-f
 Simply run the script:
 
 ```python
-python document_crawler.py
+python basic-deepcrawl.py
 ```
 
 The script will:
