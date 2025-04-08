@@ -1,0 +1,64 @@
+# NotebookLM-style RAG App (MVP) Progress Log
+
+This file tracks the implementation progress of the RAG application as specified in rules.txt.
+
+## Project Overview
+Building a Next.js application that:
+1. Takes a documentation URL as input
+2. Uses a Python script to fetch and convert content to Markdown
+3. Implements RAG with Gemini for Q&A over the documentation
+
+## Implementation Status
+
+### ✅ Step 1: Set up Next.js project (Completed)
+- Created a Next.js project with App Router
+- Set up Tailwind CSS for styling
+- Created basic project structure and configuration files
+- Implemented root layout and homepage
+
+### ✅ Step 2: URL Upload Page (Completed)
+- Created URLInput component for submitting documentation URLs
+- Implemented the /upload page with form submission
+- Added validation and loading states
+- Set up redirection to chat page after successful processing
+
+### ✅ Step 3: /api/upload Route (Completed)
+- Created API endpoint to accept URLs via POST
+- Implemented Python script execution with spawn
+- Set up markdown chunking with approximately 500 tokens per chunk
+- Implemented embedding generation using Gemini Embeddings API
+- Created in-memory vector store for chunked content
+
+### ✅ Step 4: /api/chat Route (Completed)
+- Implemented query processing endpoint
+- Added RAG functionality to retrieve relevant context chunks
+- Integrated with Gemini Pro for response generation
+
+### ✅ Step 5: Chat Page (Completed)
+- Implemented the chat interface with ChatBox component
+- Created messaging system with user and assistant messages
+- Added status checking to ensure documentation is loaded
+- Implemented API call to generate responses using RAG
+
+### ✅ Step 6: Modified Python Script (Completed)
+- Updated the scrape_to_md.py script to accept URL parameters
+- Added domain extraction to automatically filter by correct domain
+- Implemented output file path parameter
+- Enhanced error handling and reporting
+
+## 🚀 Final Result
+A functional NotebookLM-style RAG MVP that:
+- Accepts a documentation URL from the user
+- Processes that URL using a Python script to generate markdown content
+- Chunks the markdown and creates embeddings using Gemini Embeddings API
+- Stores the chunks and embeddings in an in-memory vector store
+- Provides a chat interface where users can ask questions
+- Retrieves relevant context chunks based on query similarity
+- Generates contextually accurate responses using Gemini Pro
+
+The application follows a typical RAG (Retrieval-Augmented Generation) pattern:
+1. **Retrieval**: Query embeddings are compared with document chunk embeddings to find relevant content
+2. **Augmentation**: The relevant chunks are added to the prompt context
+3. **Generation**: Gemini Pro generates a response based on the query and retrieved context
+
+This implementation satisfies all the requirements and constraints specified in rules.txt.
