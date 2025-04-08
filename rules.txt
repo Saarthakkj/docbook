@@ -1,0 +1,106 @@
+## 🧱 Project: NotebookLM-style RAG App (MVP)
+
+Build a full-stack Next.js app that allows a user to input a documentation URL. The app will:
+
+- Run a Python script in the backend that fetches and converts the content from the URL into a `.md` file.
+- Use that Markdown content as context for a chat interface.
+- Respond to user queries using a Retrieval-Augmented Generation (RAG) approach powered by **Gemini** .
+
+---
+
+### ✅ Key Constraints
+
+- Handle **one URL at a time** per session (MVP simplicity).
+- A **Python script** will be triggered automatically after URL submission, which:
+  - takes the user input url as the argument
+  - Fetches the documentation pages (or subpages),
+  - Converts content to Markdown,
+  - Overwrites the contents of a pre-defined file (e.g., `/data/context.md`).
+
+> ⚠️ The markdown content generation is delegated to the Python script and doesn't need to be implemented here. Focus on wiring up the frontend to trigger it and using the `.md` content afterward.
+
+---
+
+### ⚙️ Stack
+
+| Layer         | Tech                          |
+|---------------|-------------------------------|
+| Frontend      | Next.js (App Router)          |
+| Styling       | Tailwind CSS                  |
+| Backend APIs  | Next.js API routes            |
+| Python Script | Runs via child_process/spawn  |
+| Embeddings    | **Gemini Embeddings API**     |
+| LLM Chat      | **Gemini Pro / Gemini Chat**  |
+| Storage       | In-memory vector store        |
+| Chunking      | Token-based Markdown chunking |
+
+---
+
+### 📂 File Structure
+
+/rag-app │ ├── /app │ ├── /chat → Chat UI │ ├── /upload → URL input form │ ├── /components │ ├── ChatBox.tsx │ ├── Message.tsx │ └── URLInput.tsx │ ├── /data │ └── context.md → Output from Python script │ ├── /lib │ ├── chunkMarkdown.ts → Chunks markdown into ~500 tokens │ ├── embed.ts → Generates Gemini embeddings │ └── rag.ts → Finds top-k relevant chunks + Gemini call │ ├── /pages/api │ ├── upload.ts → Triggers Python script and embedding pipeline │ └── chat.ts → Accepts query and returns Gemini-generated response
+
+
+---
+
+### 🛠️ Steps to Build
+
+1. **Set up Next.js project**
+   - App Router + Tailwind CSS
+
+2. **URL Upload Page (`/upload`)**
+   - Input field for single URL
+   - Submit to `/api/upload`
+
+3. **`/api/upload` Route (Node + Python Bridge)**
+   - Accept the URL via POST
+   - Spawn a Python process (e.g., `python3 scrape_to_md.py <url>`)
+   - Script populates `/data/context.md`
+   - Read and chunk the markdown
+   - Generate Gemini embeddings for each chunk
+   - Store in an in-memory array with shape: `{ text, embedding, id }`
+
+4. **Chat Page (`/chat`)**
+   - Display message history
+   - Input field for user queries
+
+5. **`/api/chat` Route**
+   - Accepts query string from frontend
+   - Embeds query using Gemini
+   - Computes cosine similarity with chunk embeddings
+   - Retrieves top-k context chunks
+   - Constructs a prompt like:
+
+     ```
+     You are a helpful assistant. Use the following documentation context to answer the question.
+
+     Context:
+     [Chunk 1]
+     [Chunk 2]
+     ...
+
+     Question:
+     [User's question]
+     ```
+
+   - Sends to **Gemini Chat API**
+   - Returns result to frontend
+
+6. **Wire Chat Frontend**
+   - User types a question
+   - Sends query to `/api/chat`
+   - Display the bot's response
+
+---
+
+### 🚀 Output
+
+A functional MVP that:
+- Accepts a single documentation URL,
+- Uses a Python script to generate context markdown,
+- Embeds and stores context using Gemini,
+- Enables Q&A chat over the fetched documentation via Gemini Pro.
+
+---
+
+Let me know if you'd like the full codebase scaffolded from this!
