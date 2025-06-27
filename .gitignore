@@ -5,5 +5,7 @@ rag-app/.env.local
 rag-app/.next
 __pycache__
 .env
+kg.json
+enhanced_kg.json
 ragtest/input
 ragtest
