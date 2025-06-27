@@ -1,111 +1,124 @@
-# LLMDocs-R: RAG-Powered Documentation Assistant
+# DocBook: GraphRAG Documentation Assistant
 
-A Next.js application that implements Retrieval-Augmented Generation (RAG) to provide intelligent Q&A on documentation content. The system scrapes documentation websites, processes the content, and leverages embeddings with Google's Gemini model to deliver accurate answers.
-
-## Overview
-
-LLMDocs-R combines web scraping, vector embeddings, and large language models to create a powerful documentation assistant. It follows these key steps:
-
-1. **Documentation Scraping**: Crawls documentation websites to extract content
-2. **Content Processing**: Chunks text into manageable pieces and creates embeddings
-3. **RAG Implementation**: Uses similarity search to find relevant context for user queries
-4. **Response Generation**: Leverages Google's Gemini model to generate accurate, contextual answers
+A Python-based GraphRAG system that crawls documentation websites and provides intelligent Q&A using Google's Gemini API. Crawls any documentation site, builds a knowledge graph, and answers questions using RAG (Retrieval-Augmented Generation).
 
 ## Features
 
-- **Website Documentation Scraping**: Crawl any documentation website to extract content
-- **Smart Content Chunking**: Divide documentation into semantically meaningful chunks
-- **Vector Embeddings**: Create and store embeddings for efficient similarity search
-- **Interactive Chat Interface**: Ask questions and get answers through a clean, user-friendly UI
-- **URL-based Content Upload**: Add new documentation by simply providing a URL
-- **Markdown Rendering**: Code blocks and formatting are properly displayed in responses
+- **Website Documentation Crawling**: Uses Crawl4AI to extract content from documentation sites
+- **Knowledge Graph Generation**: Builds interconnected knowledge graphs from crawled content
+- **Enhanced GraphRAG**: Combines keyword matching, semantic similarity, and graph relationships
+- **Interactive Q&A**: Ask questions and get contextual answers from the documentation
+- **Persistent Storage**: Saves knowledge graphs for fast subsequent runs
 
-## Technology Stack
+## Installation
 
-- **Frontend**: Next.js with React and Tailwind CSS
-- **Backend**: Next.js API routes
-- **RAG Engine**: Custom implementation using vector embeddings
-- **Models**: Google's Gemini API for generating responses
-- **Scraping**: crawl4ai library for documentation extraction
-- **Storage**: File-based storage for embeddings and raw content
+### 1. Install Python Dependencies
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ and npm
-- Python 3.8+ (for the scraping functionality)
-- Google Gemini API key
-
-### Installation
-
-1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/llmdocs-r.git
-cd llmdocs-r/rag-app
+pip install -r requirements_graphrag.txt
 ```
 
-2. Install dependencies
+### 2. Set up Environment Variables
+
+Create a `.env` file in the project root:
+
 ```bash
-npm install
-pip install -r requirements.txt  # For Python dependencies
+# Required: Get your API key from https://makersuite.google.com/app/apikey
+gemini_api_key=your_gemini_api_key_here
 ```
 
-3. Create a `.env.local` file in the rag-app directory with your API key:
-```
-GEMINI_API_KEY=your_api_key_here
-```
+### 3. Install Spacy Language Model (if needed)
 
-4. Start the development server
 ```bash
-npm run dev
+python -m spacy download en_core_web_sm
 ```
-
-5. Open [http://localhost:3000](http://localhost:3000) in your browser
 
 ## Usage
 
-### Adding Documentation
+### Quick Start
 
-1. Navigate to the "Upload" page
-2. Enter the URL of the documentation site you want to process
-3. Click "Crawl" and wait for the process to complete
-4. The system will automatically index the content for future queries
+Crawl documentation and start interactive Q&A:
 
-### Asking Questions
+```bash
+python main.py --url https://docs.crawl4ai.com/
+```
 
-1. Navigate to the "Chat" page
-2. Type your question in the input field
-3. Receive answers based on the documentation content
-4. View code snippets with proper syntax highlighting
+### Custom Parameters
+
+```bash
+python main.py --url https://docs.example.com/ --max_depth 3 --max_pages 50
+```
+
+### Parameters
+
+- `--url`: Documentation URL to crawl (required)
+- `--max_depth`: Maximum crawl depth (optional)
+- `--max_pages`: Maximum number of pages to crawl (optional)
+
+### Example Session
+
+```bash
+$ python main.py --url https://docs.crawl4ai.com/
+
+🚀 Starting GraphRAG Implementation
+============================================================
+📂 Loading knowledge graph from kg.json...
+✅ Loaded knowledge graph:
+   - Nodes: 45
+   - Edges: 120
+   - Root URL: https://docs.crawl4ai.com/
+
+🤖 GraphRAG Query Interface Ready!
+Ask questions about the Crawl4AI documentation.
+Type 'quit' to exit.
+
+🔍 Enter your question: How do I install Crawl4AI?
+
+📝 Answer:
+You can install Crawl4AI using pip:
+```pip install crawl4ai```
+
+For the latest features, install from the main branch:
+```pip install git+https://github.com/unclecode/crawl4ai.git```
+...
+```
 
 ## How It Works
 
-### RAG Architecture
+1. **Deep Crawling**: Extracts content from documentation websites using Crawl4AI
+2. **Knowledge Graph**: Builds interconnected graph of pages with relationships
+3. **Embeddings**: Creates vector embeddings for semantic similarity search
+4. **GraphRAG Query**: Combines keyword matching, semantic search, and graph traversal
+5. **Answer Generation**: Uses Google Gemini to generate contextual answers
 
-The application uses a three-step process for answering questions:
+## Files
 
-1. **Retrieval**: When a question is asked, the system finds the most relevant chunks from the documentation based on embedding similarity.
-2. **Augmentation**: The retrieved context is combined with the user's question to create a comprehensive prompt.
-3. **Generation**: Google's Gemini model uses the augmented prompt to generate an accurate, specific answer.
+- `main.py` - Main application entry point
+- `deepcrawl.py` - Documentation crawler using Crawl4AI
+- `enhanced_graphrag.py` - GraphRAG implementation with embeddings
+- `requirements_graphrag.txt` - Python dependencies
+- `kg.json` - Generated knowledge graph (created after first run)
+- `enhanced_kg.json` - Enhanced knowledge graph with embeddings
 
-### Embedding Process
+## Requirements
 
-1. Documentation is chunked into smaller pieces
-2. Each chunk is converted into a vector embedding
-3. Embeddings are stored for efficient similarity search
-4. User questions are also converted to embeddings for comparison
+- Python 3.8+
+- Google Gemini API key
+- Internet connection for crawling
 
-## Contributing
+## Dependencies
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Key Python libraries (see `requirements_graphrag.txt` for full list):
+
+```
+google-generativeai>=0.7.0    # Gemini API
+sentence-transformers>=2.2.0   # Embeddings
+networkx>=3.0                  # Graph processing
+crawl4ai[all]>=0.6.0          # Web crawling
+scikit-learn>=1.3.0           # ML utilities
+spacy>=3.7.0                  # NLP processing
+```
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- This tool relies on the [crawl4ai](https://docs.crawl4ai.com) library for web crawling functionality
-- Powered by Google's Gemini API for natural language generation
-- Built with Next.js and Tailwind CSS
+MIT License
