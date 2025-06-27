@@ -5,18 +5,95 @@ Integrates deepcrawl.py output with graphrag_system.py for intelligent querying
 """
 
 import asyncio
+import argparse
+import sys
+import subprocess
 import json
 import os
 from dotenv import load_dotenv
-from enhanced_graphrag import EnhancedGraphRAGSystem, create_graphrag_from_kg_json
+from enhanced_graphrag import EnhancedGraphRAGSystem, create_graphrag_from_kg_json , create_graphrag_from_enhanced_kg
 
 load_dotenv()
+
+
+def parse_arguments(): 
+    '''parse command line arguments'''
+    
+    parser = argparse.ArgumentParser(
+        description= "GraphRAG implementation using Crawl4AI" , 
+        formatter_class = argparse.RawDescriptionHelpFormatter , 
+        epilog="""
+Examples : 
+    # Quick start with default settings 
+    python main.py --url https://docs.crawl4ai.com/
+    
+    #Custom crawling parameters 
+    python main.py --url https://crawl4ai.com/ --max_depth 3 max_pages 50
+        """
+    )
+    
+    
+    parser = argparse.ArgumentParser(description = "pass multiple varirables")
+    parser.add_argument("--max_depth"  , type = int  , help = "maximum depth of pages")
+    parser.add_argument ("--max_pages" , type = int ,  help = "maximum number of pages")
+
+    parser.add_argument("--url" , type = str  , required = True, help = "doc url")
+
+
+    return parser.parse_args()
+
+
+async def run_deepcrawl(url : str , max_depth : int , max_pages : int , output_file : str = "kg.json"):
+    """run deepcrawl.py with specified parameters"""
+    
+    
+    print(f" URL : {url} ")
+    print(f" Max depth : {max_depth}")
+    print(f"output : {output_file}")
+    
+    cmd = [sys.executable , "deepcrawl.py" , "--url" , url] 
+    
+    if max_depth is not None : 
+        cmd.extend(["--max_depth" , str(max_depth)])
+    if max_pages is not None : 
+        cmd.extend(["--max_pages" , str(max_pages)])
+    
+    
+    
+    # cmd = [
+    #     sys.executable , "deepcrawl.py" , 
+    #     "--url" , url , 
+    #     "--max_depth"  , str(max_depth) , 
+    #     "--max_pages" , str(max_pages)
+    # ] 
+    
+    
+    try : 
+        print(" executing deepcrawl.py .... ")
+        
+        result = subprocess.run(cmd , check = True)
+        
+        # process = subprocess.Popen(cmd , stdout = subprocess.PIPE , stderr = subprocess.STDOUT , text = True , bufsize =1 , universal_newlines = True)
+        # while True :
+        #     output = process.stdout.readline()
+        #     if output == '' and process.poll() is not None :
+        #         break
+        #     else: print(output.strip())
+            
+        # return_code = process.poll()
+        
+        print("\nDeepcrawl completed successfully! ")
+        
+        
+    except Exception as e : 
+        print(f" Unexpected error : {e}")
+        raise
 
 async def main():
     """Main function to demonstrate GraphRAG implementation"""
     
     # Check for required API key
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    gemini_api_key = os.getenv("gemini_api_key")
     if not gemini_api_key:
         print("❌ Error: GEMINI_API_KEY environment variable not set")
         print("Please set your Gemini API key in the .env file")
@@ -24,6 +101,7 @@ async def main():
     
     print("🚀 Starting GraphRAG Implementation")
     print("=" * 60)
+    
     
     # Step 1: Load the knowledge graph from deepcrawl.py output
     print("📂 Loading knowledge graph from kg.json...")
@@ -37,19 +115,39 @@ async def main():
         print(f"   - Root URL: {kg_data['metadata']['root_url']}")
         
     except FileNotFoundError:
-        print("❌ Error: kg.json not found. Please run deepcrawl.py first.")
-        return
+            
+        args = parse_arguments()
+        await run_deepcrawl(args.url , args.max_depth , args.max_pages , "kg.json")
+        
     except json.JSONDecodeError as e:
         print(f"❌ Error loading kg.json: {e}")
         return
     
-    # Step 2: Initialize Enhanced GraphRAG system directly from kg.json
-    print("\n🧠 Initializing Enhanced GraphRAG system...")
-    rag_system = await create_graphrag_from_kg_json("kg.json", gemini_api_key)
+    rag_system = None
     
-    # Step 3: Save the enhanced knowledge graph
-    print("💾 Saving enhanced knowledge graph...")
-    rag_system.save_enhanced_kg("enhanced_kg.json")
+    # Check if enhanced_kg.json exists
+    enhanced_kg_path = "enhanced_kg.json"
+    
+    # Replace the problematic section in main() with:
+    if os.path.exists(enhanced_kg_path):
+        print(f"✅ Found existing enhanced knowledge graph: {enhanced_kg_path}")
+        print("Loading existing enhanced GraphRAG system...")
+        
+        # Load from enhanced_kg.json with fallback to original kg.json for content
+        rag_system = await create_graphrag_from_enhanced_kg(
+            enhanced_kg_path, 
+            gemini_api_key, 
+            original_kg_path="kg.json"
+        )
+    else:
+        # Step 2: Initialize Enhanced GraphRAG system directly from kg.json
+        print("\n🧠 Initializing Enhanced GraphRAG system...")
+        rag_system = await create_graphrag_from_kg_json("kg.json", gemini_api_key)
+        
+        # Step 3: Save the enhanced knowledge graph
+        print("💾 Saving enhanced knowledge graph...")
+        rag_system.save_enhanced_kg("enhanced_kg.json")
+        
     
     # Step 4: Interactive query session
     print("\n" + "=" * 60)
@@ -141,12 +239,12 @@ def print_statistics(kg_data):
     print(f"   - Avg content length: {sum(content_lengths) / len(content_lengths):.0f} chars")
     
     # Edge statistics  
-    weights = [edge["weight"] for edge in edges]
-    similarities = [edge["semantic_similarity"] for edge in edges]
+    # weights = [edge["weight"] for edge in edges]
+    # similarities = [edge["semantic_similarity"] for edge in edges]
     
-    print(f"🔗 Edges: {len(edges)}")
-    print(f"   - Avg weight: {sum(weights) / len(weights):.3f}")
-    print(f"   - Avg semantic similarity: {sum(similarities) / len(similarities):.3f}")
+    # print(f"🔗 Edges: {len(edges)}")
+    # print(f"   - Avg weight: {sum(weights) / len(weights):.3f}")
+    # print(f"   - Avg semantic similarity: {sum(similarities) / len(similarities):.3f}")
     
     # Top keywords across all nodes
     all_keywords = []

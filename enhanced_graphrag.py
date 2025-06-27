@@ -24,7 +24,7 @@ class EnhancedEntity:
     name: str
     type: str
     description: str
-    source_urls: Set[str]
+    source_urls: List[str]
     keywords: List[str]
     content_snippet: str
     depth: int
@@ -37,11 +37,11 @@ class EnhancedRelationship:
     target: str
     relation_type: str
     description: str
-    confidence: float
-    source_urls: Set[str]
+    # confidence: float
+    source_urls: List[str]
     common_keywords: List[str]
     semantic_similarity: float
-    weight: float
+    # weight: float
 
 class EnhancedGraphRAGSystem:
     def __init__(self, gemini_api_key: str):
@@ -49,7 +49,7 @@ class EnhancedGraphRAGSystem:
         self.relationships: List[EnhancedRelationship] = []
         self.knowledge_graph = nx.DiGraph()
         self.url_content = {}  # Store full content by URL
-        self.keyword_index = defaultdict(set)  # Keyword -> URLs that contain it
+        self.keyword_index = defaultdict(list)  # Keyword -> URLs that contain it
         
         # Initialize models
         print("🔧 Loading embedding model...")
@@ -57,7 +57,7 @@ class EnhancedGraphRAGSystem:
         
         # Initialize Gemini
         genai.configure(api_key=gemini_api_key)
-        self.llm = genai.GenerativeModel('gemini-pro')
+        self.llm = genai.GenerativeModel('gemini-2.5-flash')
         
     def load_from_kg_json(self, kg_data: Dict):
         """Load knowledge graph directly from kg.json format"""
@@ -69,7 +69,7 @@ class EnhancedGraphRAGSystem:
             
             # Build keyword index
             for keyword in node_data.get("keywords", []):
-                self.keyword_index[keyword.lower()].add(url)
+                self.keyword_index[keyword.lower()].append(url)
         
         # Create entities from nodes
         self._create_entities_from_nodes(kg_data["nodes"])
@@ -105,7 +105,7 @@ class EnhancedGraphRAGSystem:
                 name=entity_name,
                 type=entity_type,
                 description=f"Documentation page: {entity_name}",
-                source_urls={url},
+                source_urls=[url],
                 keywords=node_data.get("keywords", []),
                 content_snippet=snippet,
                 depth=node_data.get("depth", 0),
@@ -124,11 +124,11 @@ class EnhancedGraphRAGSystem:
                 target=edge["target"],
                 relation_type=edge["relation_type"],
                 description=f"Navigation from {self._extract_entity_name(edge['source'])} to {self._extract_entity_name(edge['target'])}",
-                confidence=edge["weight"],
-                source_urls={edge["source"], edge["target"]},
+                # confidence=edge["weight"],
+                source_urls=[edge["source"], edge["target"]],
                 common_keywords=edge.get("common_keywords", []),
-                semantic_similarity=edge.get("semantic_similarity", 0.0),
-                weight=edge["weight"]
+                semantic_similarity=edge.get("semantic_similarity", 0.0)
+                # weight=edge["weight"]
             )
             
             self.relationships.append(relationship)
@@ -145,7 +145,86 @@ class EnhancedGraphRAGSystem:
                 return name
         
         return url.split('/')[-1] or "Home"
-    
+        
+    def load_enhanced_kg(self, enhanced_kg_path: str, original_kg_path: str = None):
+        """Load enhanced knowledge graph from saved JSON file"""
+        print(f"📥 Loading enhanced knowledge graph from {enhanced_kg_path}...")
+        
+        with open(enhanced_kg_path, 'r', encoding='utf-8') as f:
+            enhanced_data = json.load(f)
+        
+        # Clear existing data
+        self.entities.clear()
+        self.relationships.clear()
+        self.knowledge_graph.clear()
+        self.keyword_index.clear()
+        self.url_content.clear()
+        
+        # Load entities
+        print("🏗️  Reconstructing entities...")
+        for url, entity_data in enhanced_data["entities"].items():
+            # Convert embedding back to numpy array if it exists
+            embedding = None
+            if entity_data["embedding"] is not None:
+                embedding = np.array(entity_data["embedding"])
+            
+            entity = EnhancedEntity(
+                name=entity_data["name"],
+                type=entity_data["type"],
+                description=entity_data["description"],
+                source_urls=entity_data.get("source_urls", [url]),  # Fallback to URL if not saved
+                keywords=entity_data["keywords"],
+                content_snippet=entity_data["content_snippet"],
+                depth=entity_data["depth"],
+                score=entity_data["score"],
+                embedding=embedding
+            )
+            
+            self.entities[url] = entity
+        
+        # Load relationships
+        print("🔗 Reconstructing relationships...")
+        for rel_data in enhanced_data["relationships"]:
+            relationship = EnhancedRelationship(
+                source=rel_data["source"],
+                target=rel_data["target"],
+                relation_type=rel_data["relation_type"],
+                description=rel_data.get("description", ""),
+                # confidence=rel_data["pr"],
+                source_urls=rel_data.get("source_urls", [rel_data["source"], rel_data["target"]]),
+                common_keywords=rel_data["common_keywords"],
+                semantic_similarity=rel_data["semantic_similarity"],
+                # weight=rel_data["weight"]
+            )
+            
+            self.relationships.append(relationship)
+        
+        # Load keyword index
+        print("🏷️  Reconstructing keyword index...")
+        for keyword, urls in enhanced_data["keyword_index"].items():
+            self.keyword_index[keyword] = urls
+        
+        # Load url_content from original kg.json if path provided
+        if original_kg_path and os.path.exists(original_kg_path):
+            print("📄 Loading original content from kg.json...")
+            with open(original_kg_path, 'r', encoding='utf-8') as f:
+                kg_data = json.load(f)
+            
+            for url, node_data in kg_data["nodes"].items():
+                self.url_content[url] = node_data["content"]
+        else:
+            # Use content snippets as fallback if original kg.json not available
+            print("⚠️  Using content snippets as fallback (original kg.json not provided)")
+            for url, entity in self.entities.items():
+                self.url_content[url] = entity.content_snippet
+        
+        # Rebuild NetworkX graph
+        self._build_networkx_graph()
+        
+        print(f"✅ Enhanced knowledge graph loaded:")
+        print(f"   - Entities: {len(self.entities)}")
+        print(f"   - Relationships: {len(self.relationships)}")
+        print(f"   - Unique keywords: {len(self.keyword_index)}")
     def _determine_entity_type(self, url: str) -> str:
         """Determine entity type based on URL structure"""
         if "/core/" in url:
@@ -188,7 +267,7 @@ class EnhancedGraphRAGSystem:
                     rel.source,
                     rel.target,
                     relation_type=rel.relation_type,
-                    weight=rel.weight,
+                    # weight=rel.weight,
                     common_keywords=rel.common_keywords,
                     semantic_similarity=rel.semantic_similarity
                 )
@@ -198,11 +277,7 @@ class EnhancedGraphRAGSystem:
         print("🔗 Creating embeddings for entities...")
         
         for url, entity in self.entities.items():
-            # Combine name, keywords, and content snippet for embedding
             text_parts = [
-                entity.name,
-                entity.type,
-                " ".join(entity.keywords[:10]),  # Top 10 keywords
                 entity.content_snippet
             ]
             
@@ -217,7 +292,7 @@ class EnhancedGraphRAGSystem:
     async def retrieve_and_generate(self, query: str, top_k: int = 5) -> str:
         """Enhanced query processing using both keywords and embeddings"""
         
-        print(f"🔍 Processing query: {query}")
+        print(f"Processing query: {query}")
         
         # Step 1: Find relevant URLs using multiple methods
         relevant_urls = await self._find_relevant_urls(query, top_k)
@@ -311,7 +386,7 @@ class EnhancedGraphRAGSystem:
                     important_relationships.append({
                         "source": url,
                         "target": neighbor,
-                        "weight": edge_data.get("weight", 0.5),
+                        # "weight": edge_data.get("weight", 0.5),
                         "common_keywords": edge_data.get("common_keywords", []),
                         "semantic_similarity": edge_data.get("semantic_similarity", 0.0)
                     })
@@ -483,10 +558,10 @@ Answer:
                 "source": rel.source,
                 "target": rel.target,
                 "relation_type": rel.relation_type,
-                "weight": rel.weight,
+                # "weight": rel.weight,
                 "common_keywords": rel.common_keywords,
                 "semantic_similarity": rel.semantic_similarity,
-                "confidence": rel.confidence
+                # "confidence": rel.confidence
             })
         
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -494,6 +569,22 @@ Answer:
         
         print(f"💾 Enhanced knowledge graph saved to {filepath}")
 
+
+
+# Add this convenience function at the end of the file
+async def create_graphrag_from_enhanced_kg(enhanced_kg_path: str, gemini_api_key: str, original_kg_path: str = None) -> EnhancedGraphRAGSystem:
+    """Create and initialize GraphRAG system from enhanced_kg.json file"""
+    
+    # Create system instance
+    rag_system = EnhancedGraphRAGSystem(gemini_api_key)
+    
+    # Load enhanced knowledge graph
+    rag_system.load_enhanced_kg(enhanced_kg_path, original_kg_path)
+    
+    print("✅ Enhanced GraphRAG system loaded and ready!")
+    return rag_system
+        
+    
 # Convenience function for easy usage
 async def create_graphrag_from_kg_json(kg_json_path: str, gemini_api_key: str) -> EnhancedGraphRAGSystem:
     """Create and initialize GraphRAG system from kg.json file"""

@@ -31,8 +31,8 @@ top_k = 25
 
 
 parser = argparse.ArgumentParser(description = "pass multiple varirables")
-parser.add_argument("--max_depth"  , type = int , required = True , help = "maximum depth of pages")
-parser.add_argument ("--max_pages" , type = int , required = True ,  help = "maximum number of pages")
+parser.add_argument("--max_depth"  , type = int  , help = "maximum depth of pages")
+parser.add_argument ("--max_pages" , type = int ,  help = "maximum number of pages")
 
 parser.add_argument("--url" , type = str  , required = True, help = "doc url")
 
@@ -185,9 +185,11 @@ async def deep_crawl(final_md):
     print("\n ===== deep crawling == ")
 
     # filter_chain = FilterChain([DomainFilter(allowed_domains=[domain_url])])
-    deep_crawl_strategy = BFSDeepCrawlStrategy(
-        max_depth= max_depth,  max_pages = max_pages
-    )
+    deep_crawl_strategy = BFSDeepCrawlStrategy( max_depth = float('inf') , include_external = False)
+    
+    # deep_crawl_strategy = BFSDeepCrawlStrategy(
+    #     max_depth= max_depth,  max_pages = max_pages
+    # )
     
 
 
@@ -213,7 +215,7 @@ async def deep_crawl(final_md):
             if(condition): continue
 
             # Debug: Print score information
-            print(f"URL: {result.url[:50]}... | Depth: {depth} | Score: {score:.3f}")
+            # print(f"URL: {result.url[:50]}... | Depth: {depth} | Score: {score:.3f}")
             
             if result.url == doc_url : 
                 graph = GraphNode(url=doc_url, content=result.markdown, depth=0, score=1.0, children = [] )
@@ -367,71 +369,81 @@ def save_graph(graph: GraphNode, filepath: str):
         
         # Process edges (relationships)
         for child in node.children:
-            weight = calculate_link_weight(node.url, child.url, node_map, max_depth)
+            # weight = calculate_link_weight(node.url, child.url, node_map, max_depth)
             
             # Calculate common keywords between parent and child
             parent_keywords = node_keywords.get(node.url, [])
             child_keywords = node_keywords.get(child.url, [])
             common_keywords = get_common_keywords(parent_keywords, child_keywords)
             
-            if weight is not None:  # Only add edges with valid weights
-                serializable_graph["edges"].append({
-                    "source": node.url,
-                    "target": child.url,
-                    "relation_type": "NAVIGATES_TO",
-                    "weight": weight,
-                    "common_keywords": common_keywords,
-                    "semantic_similarity": len(common_keywords) / max(len(parent_keywords), len(child_keywords), 1)
-                })
-    
+            # if weight is not None:  # Only add edges with valid weights
+            serializable_graph["edges"].append({
+                "source": node.url,
+                "target": child.url,
+                "relation_type": "NAVIGATES_TO",
+                "common_keywords": common_keywords,
+                "semantic_similarity": len(common_keywords) / max(len(parent_keywords), len(child_keywords), 1)
+            })
+
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(serializable_graph, f, indent=2, ensure_ascii=False)
     
     print(f"💾 Knowledge graph saved to {filepath}")
     print(f"📊 Added keywords to {len(all_nodes)} nodes and {len(serializable_graph['edges'])} edges")
 
-def calculate_link_weight(source_url: str, target_url: str, node_map: Dict[str, GraphNode], max_depth: int) -> Optional[float]:
-    """
-    Return a depth-based penalty **only** when the two URLs are in the same
-    ancestor ⇄ descendant chain.
+# def calculate_link_weight(source_url: str, target_url: str, node_map: Dict[str, GraphNode], max_depth: int) -> Optional[float]:
+#     """
+#     Return a depth-based penalty **only** when the two URLs are in the same
+#     ancestor ⇄ descendant chain.
 
-    • If `target_url` is a (grand)child of `source_url` **or vice-versa**,
-      the weight is 1 - (absolute depth difference / max_depth)
-    • For any pair of URLs that do **not** share a direct ancestry path,
-      the function returns `None`.
-    """
+#     • If `target_url` is a (grand)child of `source_url` **or vice-versa**,
+#       the weight is 1 - (absolute depth difference / max_depth)
+#     • For any pair of URLs that do **not** share a direct ancestry path,
+#       the function returns `None`.
+#     """
     
-    # Get the nodes from the mapping
-    source_node = node_map.get(source_url)
-    target_node = node_map.get(target_url)
+#     # Get the nodes from the mapping
+#     source_node = node_map.get(source_url)
+#     target_node = node_map.get(target_url)
     
-    if source_node is None or target_node is None:
-        return None
+#     if source_node is None or target_node is None:
+#         return None
 
-    def is_ancestor(ancestor_node: GraphNode, descendant_url: str) -> bool:
-        """DFS to see whether ancestor_node reaches descendant_url through children."""
-        stack = [ancestor_node]
-        visited = set()
+#     def is_ancestor(ancestor_node: GraphNode, descendant_url: str) -> bool:
+#         """DFS to see whether ancestor_node reaches descendant_url through children."""
+#         stack = [ancestor_node]
+#         visited = set()
         
-        while stack:
-            current = stack.pop()
-            if current.url == descendant_url:
-                return True
-            if current.url in visited:
-                continue
-            visited.add(current.url)
-            stack.extend(current.children)
+#         while stack:
+#             current = stack.pop()
+#             if current.url == descendant_url:
+#                 return True
+#             if current.url in visited:
+#                 continue
+#             visited.add(current.url)
+#             stack.extend(current.children)
         
-        return False
-
-    # Check if there's an ancestral relationship
-    if is_ancestor(source_node, target_url) or is_ancestor(target_node, source_url):
-        if max_depth == 0:
-            return 1.0  # Avoid division by zero
-        depth_diff = abs(source_node.depth - target_node.depth)
-        return max(0.0, 1.0 - (depth_diff / max_depth))
+#         return False
     
-    return None
+#     all_nodes: List[GraphNode] = []
+#     stack: List[GraphNode] = [root]
+#     while stack:
+#         node = stack.pop()
+#         all_nodes.append(node)
+#         stack.extend(node.children)
+
+#     # Sort by depth for nicer visual ordering
+#     all_nodes.sort(key=lambda n: n.depth)
+
+
+#     # Check if there's an ancestral relationship
+#     if is_ancestor(source_node, target_url) or is_ancestor(target_node, source_url):
+#         if max_depth == 0:
+#             return 1.0  # Avoid division by zero
+#         depth_diff = abs(source_node.depth - target_node.depth)
+#         return max(0.0, 1.0 - (depth_diff / max_depth))
+    
+#     return None
         
 async def main(): 
     print("======= running deep crwal ===============" ) 
