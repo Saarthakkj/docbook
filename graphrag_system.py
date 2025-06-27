@@ -8,7 +8,7 @@ import asyncio
 import json
 import os
 from dotenv import load_dotenv
-from enhanced_graphrag import EnhancedGraphRAGSystem, create_graphrag_from_kg_json
+from graphrag_system import GraphRAGSystem
 
 load_dotenv()
 
@@ -43,15 +43,23 @@ async def main():
         print(f"❌ Error loading kg.json: {e}")
         return
     
-    # Step 2: Initialize Enhanced GraphRAG system directly from kg.json
-    print("\n🧠 Initializing Enhanced GraphRAG system...")
-    rag_system = await create_graphrag_from_kg_json("kg.json", gemini_api_key)
+    # Step 2: Convert kg.json format to GraphRAG system format
+    print("\n🔄 Converting to GraphRAG format...")
+    url_graph = convert_kg_to_url_graph(kg_data)
     
-    # Step 3: Save the enhanced knowledge graph
+    # Step 3: Initialize GraphRAG system
+    print("🧠 Initializing GraphRAG system...")
+    rag_system = GraphRAGSystem(gemini_api_key)
+    
+    # Step 4: Build the knowledge graph
+    print("🏗️  Building knowledge graph...")
+    await rag_system.build_knowledge_graph(url_graph)
+    
+    # Step 5: Save the enhanced knowledge graph
     print("💾 Saving enhanced knowledge graph...")
-    rag_system.save_enhanced_kg("enhanced_kg.json")
+    rag_system.save_knowledge_graph("enhanced_kg.json")
     
-    # Step 4: Interactive query session
+    # Step 6: Interactive query session
     print("\n" + "=" * 60)
     print("🤖 GraphRAG Query Interface Ready!")
     print("Ask questions about the Crawl4AI documentation.")

@@ -3,3 +3,7 @@ rag-app/build/
 rag-app/.env
 rag-app/.env.local
 rag-app/.next
+__pycache__
+.env
+ragtest/input
+ragtest
