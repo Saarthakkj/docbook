@@ -19,7 +19,8 @@ from dotenv import load_dotenv
 from summa import keywords as textrank_keywords
 import re
 from collections import Counter
-
+from pathlib import Path
+OUTPUT_PATH = Path(__file__).with_name("kg.json")
 
 top_k = 25
 
@@ -452,7 +453,8 @@ async def main():
 
     graph  = await deep_crawl(final_md)
     
-    save_graph(graph , "kg.json")
+    # save_graph(graph , "kg.json")
+    save_graph(graph, OUTPUT_PATH)
 
     print("done")
 

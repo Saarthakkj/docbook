@@ -9,3 +9,4 @@ kg.json
 enhanced_kg.json
 ragtest/input
 ragtest
+grpc/node_modules
