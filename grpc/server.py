@@ -22,7 +22,8 @@ class PythonRunnerServicer(service_pb2_grpc.PythonRunnerServicer):
         self.allowed_scripts = {
                 # Map a script alias to the actual Python script we want to execute.
                 # Adjust the relative path if your directory layout changes.
-                'deepcrawl': '../deepcrawl.py'
+                'deepcrawl': 'deepcrawl.py' , 
+                'main': 'main.py'
         }
 
     def ExecuteScript(self , request , context): 
@@ -40,20 +41,25 @@ class PythonRunnerServicer(service_pb2_grpc.PythonRunnerServicer):
                 )
 
             # Build the command to run the requested Python script with arguments.
-            cmd = [sys.executable, script_path] + list(request.args)
-
-
-            # cmd = [sys.executable  , script_path] + list (request.args)
-
-
+            # Use the "-u" flag to force the Python interpreter into *unbuffered* mode so 
+            # that stdout/stderr are flushed immediately. This ensures the gRPC client
+            # receives incremental output (otherwise you may only see the first line and
+            # nothing afterwards until the process completes).
+            cmd = [sys.executable, "-u", script_path] + list(request.args)
 
             result = subprocess.run(
-                    cmd , 
-                    capture_output = True , 
-                    text = True , 
-                    timeout = 300, 
-                    cwd =  PROJECT_ROOT
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=PROJECT_ROOT,
             )
+
+            # Log a preview of stdout/stderr for debugging
+            stdout_preview = (result.stdout[:300] + '...') if len(result.stdout) > 300 else result.stdout
+            stderr_preview = (result.stderr[:300] + '...') if len(result.stderr) > 300 else result.stderr
+            logger.info(f"Stdout preview ({len(result.stdout)} chars): {stdout_preview}")
+            if result.stderr:
+                logger.warning(f"Stderr preview ({len(result.stderr)} chars): {stderr_preview}")
 
             duration = time.time() - start_time
             logger.info(
@@ -75,9 +81,97 @@ class PythonRunnerServicer(service_pb2_grpc.PythonRunnerServicer):
                     success= False
             )
 
+    def ExecuteScriptStream(self, request, context):
+        """Server-side streaming version of ExecuteScript.
+
+        Streams stdout / stderr lines from the underlying script execution
+        back to the client as they become available, followed by a final
+        message that contains the exit code once the process terminates.
+        """
+        import select
+
+        start_time = time.time()
+        logger.info(
+            "ExecuteScriptStream called with script_name=%s, args=%s",
+            request.script_name,
+            list(request.args),
+        )
+
+        script_path = self.allowed_scripts.get(request.script_name)
+        if not script_path:
+            yield service_pb2.ScriptResponse(
+                exit_code=1,
+                stderr=f"Unknown script '{request.script_name}' requested.",
+                success=False,
+            )
+            return
+
+        # Same unbuffered invocation for streaming execution
+        cmd = [sys.executable, "-u", script_path] + list(request.args)
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=PROJECT_ROOT,
+            )
+
+            stdout_fd = proc.stdout.fileno() if proc.stdout else None
+            stderr_fd = proc.stderr.fileno() if proc.stderr else None
+
+            # Stream output until the process terminates and all output is consumed.
+            while True:
+                fds_to_read = []
+                if stdout_fd is not None:
+                    fds_to_read.append(proc.stdout)
+                if stderr_fd is not None:
+                    fds_to_read.append(proc.stderr)
+
+                if not fds_to_read:
+                    break
+
+                readable, _, _ = select.select(fds_to_read, [], [], 0.1)
+
+                for r in readable:
+                    line = r.readline()
+                    if line:
+                        if r is proc.stdout:
+                            logger.debug("stdout: %s", line.rstrip())
+                            yield service_pb2.ScriptResponse(stdout=line, exit_code=-1)
+                        else:
+                            logger.debug("stderr: %s", line.rstrip())
+                            yield service_pb2.ScriptResponse(stderr=line, exit_code=-1)
+
+                if proc.poll() is not None and not readable:
+                    # Process has finished and no more output to read.
+                    break
+
+            exit_code = proc.wait()
+            duration = time.time() - start_time
+            logger.info(
+                "Script %s executed via stream. Exit=%s Duration=%.2fs",
+                script_path,
+                exit_code,
+                duration,
+            )
+
+            yield service_pb2.ScriptResponse(
+                exit_code=exit_code,
+                success=exit_code == 0,
+            )
+
+        except Exception as e:
+            logger.exception("Exception during ExecuteScriptStream: %s", e)
+            yield service_pb2.ScriptResponse(
+                exit_code=1,
+                stderr=str(e),
+                success=False,
+            )
 
 def serve():
-    server= grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     service_pb2_grpc.add_PythonRunnerServicer_to_server(
             PythonRunnerServicer(), server
     )

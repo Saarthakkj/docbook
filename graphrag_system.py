@@ -22,8 +22,8 @@ async def main():
         print("Please set your Gemini API key in the .env file")
         return
     
-    print("🚀 Starting GraphRAG Implementation")
-    print("=" * 60)
+    # print("🚀 Starting GraphRAG Implementation")
+    # print("=" * 60)
     
     # Step 1: Load the knowledge graph from deepcrawl.py output
     print("📂 Loading knowledge graph from kg.json...")
@@ -58,49 +58,8 @@ async def main():
     # Step 5: Save the enhanced knowledge graph
     print("💾 Saving enhanced knowledge graph...")
     rag_system.save_knowledge_graph("enhanced_kg.json")
-    
-    # Step 6: Interactive query session
-    print("\n" + "=" * 60)
-    print("🤖 GraphRAG Query Interface Ready!")
-    print("Ask questions about the Crawl4AI documentation.")
-    print("Type 'quit' to exit.")
-    print("=" * 60)
-    
-    # Example queries to demonstrate capabilities
-    example_queries = [
-        "What is deep crawling in Crawl4AI and how does it work?",
-        "How do I install and set up Crawl4AI?",
-        "What are the different extraction strategies available?",
-        "How can I use Docker with Crawl4AI?",
-        "What's new in the latest version of Crawl4AI?"
-    ]
-    
-    print("\n💡 Example queries you can try:")
-    for i, query in enumerate(example_queries, 1):
-        print(f"   {i}. {query}")
-    
-    while True:
-        print("\n" + "-" * 40)
-        user_query = input("🔍 Enter your question: ").strip()
-        
-        if user_query.lower() in ['quit', 'exit', 'q']:
-            print("👋 Thanks for using GraphRAG! Goodbye!")
-            break
-        
-        if not user_query:
-            continue
-        
-        try:
-            print("\n🔎 Processing your query...")
-            answer = await rag_system.retrieve_and_generate(user_query)
-            print("\n📝 Answer:")
-            print("=" * 50)
-            print(answer)
-            print("=" * 50)
-            
-        except Exception as e:
-            print(f"❌ Error processing query: {e}")
-            print("Please try a different question.")
+
+    return  # Stop execution here
 
 def convert_kg_to_url_graph(kg_data):
     """
@@ -129,44 +88,6 @@ def convert_kg_to_url_graph(kg_data):
         }
     
     return url_graph
-
-def print_statistics(kg_data):
-    """Print detailed statistics about the knowledge graph"""
-    nodes = kg_data["nodes"]
-    edges = kg_data["edges"]
-    
-    print("\n📊 Knowledge Graph Statistics:")
-    print("-" * 40)
-    
-    # Node statistics
-    depths = [node["depth"] for node in nodes.values()]
-    keyword_counts = [len(node.get("keywords", [])) for node in nodes.values()]
-    content_lengths = [len(node["content"]) for node in nodes.values()]
-    
-    print(f"📈 Nodes: {len(nodes)}")
-    print(f"   - Max depth: {max(depths) if depths else 0}")
-    print(f"   - Avg keywords per node: {sum(keyword_counts) / len(keyword_counts):.1f}")
-    print(f"   - Avg content length: {sum(content_lengths) / len(content_lengths):.0f} chars")
-    
-    # Edge statistics  
-    weights = [edge["weight"] for edge in edges]
-    similarities = [edge["semantic_similarity"] for edge in edges]
-    
-    print(f"🔗 Edges: {len(edges)}")
-    print(f"   - Avg weight: {sum(weights) / len(weights):.3f}")
-    print(f"   - Avg semantic similarity: {sum(similarities) / len(similarities):.3f}")
-    
-    # Top keywords across all nodes
-    all_keywords = []
-    for node in nodes.values():
-        all_keywords.extend(node.get("keywords", []))
-    
-    from collections import Counter
-    top_keywords = Counter(all_keywords).most_common(10)
-    
-    print(f"🏷️  Top Keywords:")
-    for keyword, count in top_keywords:
-        print(f"   - {keyword}: {count}")
 
 if __name__ == "__main__":
     asyncio.run(main())

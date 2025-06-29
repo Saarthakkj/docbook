@@ -20,7 +20,13 @@ from summa import keywords as textrank_keywords
 import re
 from collections import Counter
 from pathlib import Path
-OUTPUT_PATH = Path(__file__).with_name("kg.json")
+
+
+# Looking at the selected code, this line is setting a default output path for the knowledge graph JSON file. The `Path(__file__).with_name("kg.json")` creates a path that points to a file named "kg.json" in the same directory as the current script.
+
+# However, I notice that later in the code, `OUTPUT_PATH` gets overwritten by the command line argument `args.output_path`, making this default value unused.
+
+# Here's a cleaner rewrite that removes the redundant default assignment:
 
 top_k = 25
 
@@ -36,7 +42,7 @@ parser.add_argument("--max_depth"  , type = int  , help = "maximum depth of page
 parser.add_argument ("--max_pages" , type = int ,  help = "maximum number of pages")
 
 parser.add_argument("--url" , type = str  , required = True, help = "doc url")
-
+parser.add_argument("--output_dir" , type = str  , required = True, help = "output dir")
 
 args = parser.parse_args()
 
@@ -45,6 +51,7 @@ args = parser.parse_args()
 doc_url = args.url 
 max_depth = args.max_depth
 max_pages = args.max_pages
+OUTPUT_DIR = args.output_dir
 
 uris = [[]]
 
@@ -184,13 +191,12 @@ async def deep_crawl(final_md):
     """deep crawl with bfs"""
 
     print("\n ===== deep crawling == ")
-
-    # filter_chain = FilterChain([DomainFilter(allowed_domains=[domain_url])])
-    deep_crawl_strategy = BFSDeepCrawlStrategy( max_depth = float('inf') , include_external = False)
     
-    # deep_crawl_strategy = BFSDeepCrawlStrategy(
-    #     max_depth= max_depth,  max_pages = max_pages
-    # )
+    deep_crawl_strategy = BFSDeepCrawlStrategy(    max_depth = float('inf') if max_depth is None else max_depth , include_external = False)
+    
+    if max_pages is not None : 
+        deep_crawl_strategy.max_pages = max_pages
+    
     
 
 
@@ -221,9 +227,12 @@ async def deep_crawl(final_md):
             if result.url == doc_url : 
                 graph = GraphNode(url=doc_url, content=result.markdown, depth=0, score=1.0, children = [] )
                 continue
-            
-            parent_node = find_node_by_url(graph , parent_url)
-            parent_node.add_child(GraphNode(url=result.url, content=result.markdown, depth=depth, score=1.0, children = [] ))
+            try : 
+                parent_node = find_node_by_url(graph , parent_url)
+                parent_node.add_child(GraphNode(url=result.url, content=result.markdown, depth=depth, score=1.0, children = [] ))
+            except Exception as e:
+                print(f"Error adding child: {e}")
+                continue
             
                 
                 
@@ -450,10 +459,14 @@ async def main():
     print("======= running deep crwal ===============" ) 
 
     final_md = []
+    
+    print(f"output path : {OUTPUT_DIR}")
 
     graph  = await deep_crawl(final_md)
     
     # save_graph(graph , "kg.json")
+    
+    OUTPUT_PATH = os.path.join(OUTPUT_DIR , "kg.json")
     save_graph(graph, OUTPUT_PATH)
 
     print("done")

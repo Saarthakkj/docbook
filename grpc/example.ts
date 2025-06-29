@@ -6,26 +6,35 @@ import { log } from './logger';
 async function main(){
 	const runner = new PythonScriptRunner(); 
 	const startTime = performance.now();
-	try{
-		// Call the deepcrawl.py script through gRPC. Arguments follow the CLI expected
-		// by deepcrawl.py: --url (required) plus optional depth/page limits.
-		const result = await runner.executeScript('deepcrawl', [
-			'--url', 'https://grpc.io/docs/' 
-		]);
 
-		console.log(' exit code : ' , result.exitCode); 
-		console.log(' output : ' , result.stdout); 
+	const stream = runner.executeScriptStream('main', [
+		'--max_pages' , '30', 
+		'--max_depth' , '3', 	
+		'--url', 'https://grpc.io/docs', 
+		'--output_dir', 'grpc/'
+	]);
 
-		if(!result.success){
-			console.error(' error : ' , result.stderr);
+	stream.on('data', (response: any) => {
+		if (response.stdout) {
+			process.stdout.write(response.stdout);
 		}
-	}catch(error){
-		console.error('grpc error' , error);
-	}finally {
+		if (response.stderr) {
+			process.stderr.write(response.stderr);
+		}
+		if (response.exit_code !== undefined && response.exit_code >= 0) {
+			console.log(`\nProcess exited with code ${response.exit_code}`);
+		}
+	});
+
+	stream.on('error', (err: any) => {
+		console.error('gRPC stream error:', err);
+	});
+
+	stream.on('end', () => {
 		runner.close();
 		const duration = performance.now() - startTime;
-		log(`Total example.ts execution time: ${duration.toFixed(0)} ms`);
-	}
+		log(`Total example.ts (stream) execution time: ${duration.toFixed(0)} ms`);
+	});
 }
 
 main(); 
