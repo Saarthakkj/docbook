@@ -22,6 +22,7 @@ import json
 import os
 from dotenv import load_dotenv
 from enhanced_graphrag import EnhancedGraphRAGSystem, create_graphrag_from_kg_json 
+from deepcrawl import save_graph
 
 load_dotenv()
 
@@ -150,17 +151,41 @@ async def main():
     
     rag_system = None
     
-    #check for existing json file for this
-    
-    # kg_path = os.path.join(sys.path , args.name)
-    # if os.path.exists(kg_path):
-    #     print(f"Found existing file for the given name {args.name}")
-    #     # if exists -> then just call the graphRAG implementation
-    # else:
-    #     raise FileNotFoundError
-    graph = await run_deepcrawl(args.url , args.max_depth , args.max_pages)
+    kg_path = os.path.join(args.output_dir, f"{args.name}_kg.json")
+    if os.path.exists(kg_path):
+        print(f"Found existing knowledge graph at {kg_path}")
+        with open(kg_path, 'r', encoding='utf-8') as f:
+            kg_data = json.load(f)
+        graph = Graph()
+        graph.metadata = kg_data['metadata']
+        node_map = {}
+        for url, data in kg_data['nodes'].items():
+            node = GraphNode(
+                url=data['source_url'],
+                content=data['content'],
+                depth=data['depth'],
+                score=data['score'],
+                keywords=data['keywords'],
+                embedding=[],
+                children=[]
+            )
+            node_map[url] = node
+            graph.nodes[url] = node
+        for edge_data in kg_data['edges']:
+            source = edge_data['source']
+            target = edge_data['target']
+            if source in node_map and target in node_map:
+                node_map[source].add_child(node_map[target])
+            graph.edges.append(edge_data)
+    else:
+        print(f"No existing graph found, running deepcrawl...")
+        graph = await run_deepcrawl(args.url, args.max_depth, args.max_pages)
+        root = graph.nodes[args.url]
+        save_graph(root, kg_path)
+        print(f"Knowledge graph saved to {kg_path}")
+
     rag_system = await create_graphrag_from_kg_json(
-        graph, 
+        graph,
         gemini_api_key
     )
     print("🤖 GraphRAG Query Interface Ready!")

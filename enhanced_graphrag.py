@@ -42,7 +42,7 @@ load_dotenv()
 class EnhancedEntity:
     name: str
     type: str
-    description: str
+    # description: str
     source_urls: List[str]
     keywords: List[str]
     content_snippet: str
@@ -55,7 +55,7 @@ class EnhancedRelationship:
     source: str
     target: str
     relation_type: str
-    description: str
+    # description: str
     # confidence: float
     source_urls: List[str]
     common_keywords: List[str]
@@ -79,10 +79,14 @@ class EnhancedGraphRAGSystem:
         # Initialize Gemini
         # genai.configure(api_key=gemini_api_key)
         client = genai.Client(api_key='GEMINI_API_KEY')
-        response = client.models.generate_content(
-            model='gemini-2.0-flash-001',
-            contents=['Could you summarize this file?', file]
-        )
+        chat = client.chats.create(model='gemini-2.0-flash')
+        self.llm = chat
+        # for chunk in chat.send_message_stream('tell me a story'):
+        # print(chunk.text)
+
+        # response = client.models.generate_content(
+        #     model='gemini-2.0-flash-001',
+        # )
         # self.llm = genai.GenerativeModel('gemini-2.5-flash')
         
     def load_from_kg_json(self):
@@ -164,11 +168,9 @@ class EnhancedGraphRAGSystem:
                 target=edge["target"],
                 relation_type=edge["relation_type"],
                 # description=f"Navigation from {self._extract_entity_name(edge['source'])} to {self._extract_entity_name(edge['target'])}",
-                # confidence=edge["weight"],
                 source_urls=[edge["source"], edge["target"]],
                 common_keywords=edge.get("common_keywords", []),
                 semantic_similarity=edge.get("semantic_similarity", 0.0)
-                # weight=edge["weight"]
             )
             
             self.relationships.append(relationship)
@@ -325,7 +327,7 @@ class EnhancedGraphRAGSystem:
         expanded_context = self._expand_context_with_graph(relevant_urls , top_k)
         
         # Step 3: Retrieve and rank relevant content
-        relevant_content = self._retrieve_ranked_content(expanded_context, query)
+        # relevant_content = self._retrieve_ranked_content(expanded_context, query)
         
         # Step 4: Generate answer using LLM
         answer = await self._generate_enhanced_answer(query, expanded_context, expanded_context)
@@ -491,62 +493,62 @@ class EnhancedGraphRAGSystem:
         
     #     return snippets
     
-#     async def _generate_enhanced_answer(self, query: str, content_items: List[Dict], context: Dict) -> str:
-#         """Generate enhanced answer using LLM with structured context"""
+    async def _generate_enhanced_answer(self, query: str, content_items: List[Dict], context: Dict) -> str:
+        """Generate enhanced answer using LLM with structured context"""
         
-#         # Prepare structured context
-#         context_sections = []
+        # Prepare structured context
+        context_sections = []
         
-#         # Add content from top relevant sources
-#         for item in content_items[:5]:  # Top 5 most relevant
-#             section = f"**{item['entity_name']} ({item['entity_type']})**\n"
-#             section += f"Source: {item['url']}\n"
-#             if item['keywords']:
-#                 section += f"Keywords: {', '.join(item['keywords'][:8])}\n"
-#             section += "Content:\n"
-#             for snippet in item['snippets']:
-#                 section += f"- {snippet}\n"
-#             context_sections.append(section)
+        # Add content from top relevant sources
+        for item in content_items[:5]:  # Top 5 most relevant
+            section = f"**{item['entity_name']} ({item['entity_type']})**\n"
+            section += f"Source: {item['url']}\n"
+            if item['keywords']:
+                section += f"Keywords: {', '.join(item['keywords'][:8])}\n"
+            section += "Content:\n"
+            for snippet in item['snippets']:
+                section += f"- {snippet}\n"
+            context_sections.append(section)
         
-#         # Add relationship information
-#         relationships_text = ""
-#         if context['relationships']:
-#             relationships_text = "\n**Related Concepts:**\n"
-#             for rel in context['relationships'][:5]:
-#                 source_name = self._extract_entity_name(rel['source'])
-#                 target_name = self._extract_entity_name(rel['target'])
-#                 relationships_text += f"- {source_name} → {target_name}"
-#                 if rel['common_keywords']:
-#                     relationships_text += f" (shared: {', '.join(rel['common_keywords'][:3])})"
-#                 relationships_text += "\n"
+        # Add relationship information
+        relationships_text = ""
+        if context['relationships']:
+            relationships_text = "\n**Related Concepts:**\n"
+            for rel in context['relationships'][:5]:
+                source_name = self._extract_entity_name(rel['source'])
+                target_name = self._extract_entity_name(rel['target'])
+                relationships_text += f"- {source_name} → {target_name}"
+                if rel['common_keywords']:
+                    relationships_text += f" (shared: {', '.join(rel['common_keywords'][:3])})"
+                relationships_text += "\n"
         
-#         # Construct prompt
-#         prompt = f"""
-# Based on the following Crawl4AI documentation content, answer the user's question comprehensively and accurately.
+        # Construct prompt
+        prompt = f"""
+        Based on the following Crawl4AI documentation content, answer the user's question comprehensively and accurately.
 
-# Question: {query}
+        Question: {query}
 
-# Documentation Content:
-# {chr(10).join(context_sections)}
+        Documentation Content:
+        {chr(10).join(context_sections)}
 
-# {relationships_text}
+        {relationships_text}
 
-# Instructions:
-# 1. Provide a clear, comprehensive answer to the question
-# 2. Use specific information from the documentation
-# 3. Include relevant code examples or commands when applicable
-# 4. Mention specific URLs when referencing particular features
-# 5. If the question asks about multiple topics, organize your answer with clear sections
-# 6. Be practical and actionable in your recommendations
+        Instructions:
+        1. Provide a clear, comprehensive answer to the question
+        2. Use specific information from the documentation
+        3. Include relevant code examples or commands when applicable
+        4. Mention specific URLs when referencing particular features
+        5. If the question asks about multiple topics, organize your answer with clear sections
+        6. Be practical and actionable in your recommendations
 
-# Answer:
-# """
+        Answer:
+        """
         
-#         try:
-#             response = await self.llm.generate_content_async(prompt)
-#             return response.text
-#         except Exception as e:
-#             return f"Error generating answer: {e}"
+        try:
+            response = await self.llm.send_message_stream(prompt)
+            return response.text
+        except Exception as e:
+            return f"Error generating answer: {e}"
     
     # def save_enhanced_kg(self, filepath: str):
     #     """Save the enhanced knowledge graph"""
@@ -592,9 +594,9 @@ class EnhancedGraphRAGSystem:
         
     #     print(f"💾 Enhanced knowledge graph saved to {filepath}")
 
-        # Stop further processing; the current workflow ends once the
-        # enhanced knowledge graph is persisted.
-        return
+    #     # Stop further processing; the current workflow ends once the
+    #     # enhanced knowledge graph is persisted.
+    #     return
 
 
 # Add this convenience function at the end of the file

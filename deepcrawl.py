@@ -65,27 +65,6 @@ class metadata(TypedDict):
 top_k = 25
 
 
-parser = argparse.ArgumentParser(description = "pass multiple varirables")
-parser.add_argument("--max_depth"  , type = int  , help = "maximum depth of pages")
-parser.add_argument ("--max_pages" , type = int ,  help = "maximum number of pages")
-
-parser.add_argument("--url" , type = str  , required = True, help = "doc url")
-parser.add_argument("--output_dir" , type = str  , required = True, help = "output dir")
-parser.add_argument("--name" , type = str  , required = True, help = "name")
-
-args = parser.parse_args()
-
-
-
-doc_url = args.url 
-max_depth = args.max_depth
-max_pages = args.max_pages
-OUTPUT_DIR = args.output_dir
-name = args.name
-
-uris = [[]]
-
-
 def extract_keywords_textrank(content: str, top_k: int ) -> List[str]:
     """Extract keywords using TextRank algorithm from summa library"""
     # if not TEXTRANK_AVAILABLE or not content.strip():
@@ -199,7 +178,7 @@ def find_node_by_url(graph: GraphNode, target_url: str) -> Optional[GraphNode]:
     
 
 
-async def deep_crawl():
+async def deep_crawl(doc_url: str, max_depth: Optional[int], max_pages: Optional[int]):
     """deep crawl with bfs"""
 
     print("\n ===== deep crawling == ")
@@ -437,14 +416,14 @@ def save_graph(graph: GraphNode, filepath: str):
     print(f"💾 Knowledge graph saved to {filepath}")
     print(f"📊 Added keywords to {len(all_nodes)} nodes and {len(serializable_graph['edges'])} edges")
 
-async def main(url : str , max_depth : int , max_pages : int ) -> GraphNode: 
+async def main(url: str, max_depth: Optional[int], max_pages: Optional[int]) -> Graph:
     print("======= running deep crwal ===============" ) 
 
     # final_md = []
     
     # print(f"output path : {OUTPUT_DIR}")
 
-    graph  = await deep_crawl()
+    graph  = await deep_crawl(url, max_depth, max_pages)
     
     return graph
     
@@ -458,7 +437,19 @@ async def main(url : str , max_depth : int , max_pages : int ) -> GraphNode:
     
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description = "pass multiple varirables")
+    parser.add_argument("--max_depth"  , type = int  , help = "maximum depth of pages")
+    parser.add_argument ("--max_pages" , type = int ,  help = "maximum number of pages")
+    parser.add_argument("--url" , type = str  , required = True, help = "doc url")
+    parser.add_argument("--output_dir" , type = str  , required = True, help = "output dir")
+    parser.add_argument("--name" , type = str  , required = True, help = "name")
+    args = parser.parse_args()
+    doc_url = args.url 
+    max_depth = args.max_depth
+    max_pages = args.max_pages
+    OUTPUT_DIR = args.output_dir
+    name = args.name
+    asyncio.run(main(args.url, args.max_depth, args.max_pages))
 
 
 
