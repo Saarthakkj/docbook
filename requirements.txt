@@ -2,21 +2,22 @@
 
 # Crawling / Graph / NLP
 crawl4ai[all]>=0.6.0
-sentence-transformers>=2.2.0
-networkx>=3.0
-scikit-learn>=1.3.0
-numpy>=1.24.0
+sentence-transformers>=3.1.1   # Updated for Python 3.13 support
+networkx>=3.4.1                # Updated
+scikit-learn>=1.5.2            # Updated for Python 3.13
+numpy>=1.26.4                  # Updated (1.24.x doesn't support 3.13)
 summa>=1.2.0
 spacy>=3.7.0
-pandas>=2.0.0
+pandas>=2.2.3                  # Updated
 
 # Google Gemini integration
-google-generativeai>=0.7.0
-
+google-genai
 # Environment & utilities
 python-dotenv>=1.0.0
-asyncio-run>=0.1.1
 
 # gRPC server & Protocol Buffers
 grpcio>=1.73.1
-protobuf>=6.31.0 
+protobuf
+torch>=2.0.0  # Required for sentence-transformers
+
+# Note: Removed asyncio-run>=0.1.1 as it's invalid/unnecessary (use built-in asyncio.run()) 

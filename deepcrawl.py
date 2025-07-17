@@ -15,26 +15,54 @@ from crawl4ai import DefaultMarkdownGenerator
 from crawl4ai import BFSDeepCrawlStrategy, DomainFilter, FilterChain
 from crawl4ai import BrowserConfig
 import argparse
+from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 from summa import keywords as textrank_keywords
 import re
 from collections import Counter
 from pathlib import Path
+from typing import Set, Optional, List, Dict, Any , TypedDict
+
+from dataclasses import dataclass, field
 
 
-# Looking at the selected code, this line is setting a default output path for the knowledge graph JSON file. The `Path(__file__).with_name("kg.json")` creates a path that points to a file named "kg.json" in the same directory as the current script.
+@dataclass
+class GraphNode:
+    """Simple graph node representation for the crawler"""
+    url: str
+    content: str
+    depth: int
+    score: float
+    keywords : List[str]
+    embedding : List[float]
+    children: List['GraphNode'] = field(default_factory=list)
+    
+    def add_child(self, child_node: 'GraphNode') -> None:
+        """Add a child GraphNode to this node"""
+        self.children.append(child_node)
+    
+@dataclass        
+class Graph : 
+    nodes: Dict[str, GraphNode] = field(default_factory=dict)
+    edges: List['Edge'] = field(default_factory=list)
+    metadata : metadata = field(default_factory=dict)
 
-# However, I notice that later in the code, `OUTPUT_PATH` gets overwritten by the command line argument `args.output_path`, making this default value unused.
+        
+        
+class Edge(TypedDict) : 
+    source : str 
+    target : str 
+    relation_type : str
+    common_keywords : List[str]
+    semantic_similarity : float
+    
+class metadata(TypedDict):
+    total_nodes: int
+    max_depth: int
+    root_url: str
 
-# Here's a cleaner rewrite that removes the redundant default assignment:
 
 top_k = 25
-
-
-# gemini_api_key = os.getenv("gemini_api_key")
-
-# if not gemini_api_key : 
-#     raise ValueError("Error : gemini api key env var not set")
 
 
 parser = argparse.ArgumentParser(description = "pass multiple varirables")
@@ -43,6 +71,7 @@ parser.add_argument ("--max_pages" , type = int ,  help = "maximum number of pag
 
 parser.add_argument("--url" , type = str  , required = True, help = "doc url")
 parser.add_argument("--output_dir" , type = str  , required = True, help = "output dir")
+parser.add_argument("--name" , type = str  , required = True, help = "name")
 
 args = parser.parse_args()
 
@@ -52,11 +81,10 @@ doc_url = args.url
 max_depth = args.max_depth
 max_pages = args.max_pages
 OUTPUT_DIR = args.output_dir
+name = args.name
 
 uris = [[]]
 
-from dataclasses import dataclass, field
-from typing import Set, Optional, List, Dict, Any
 
 def extract_keywords_textrank(content: str, top_k: int ) -> List[str]:
     """Extract keywords using TextRank algorithm from summa library"""
@@ -110,27 +138,11 @@ def get_common_keywords(keywords1: List[str], keywords2: List[str]) -> List[str]
     set2 = set(keyword.lower() for keyword in keywords2)
     common = set1.intersection(set2)
     return list(common)
-@dataclass
-class GraphNode:
-    """Simple graph node representation for the crawler"""
-    url: str
-    content: str
-    depth: int
-    score: float
-    children: List['GraphNode'] = field(default_factory=list)
-    
-    def add_child(self, child_node: 'GraphNode') -> None:
-        """Add a child GraphNode to this node"""
-        self.children.append(child_node)
-    
-    # def remove_child(self, child_node: 'GraphNode') -> None:
-    #     """Remove a child GraphNode from this node"""
-    #     if child_node in self.children:
-    #         self.children.remove(child_node)
-    
-    # def get_children_count(self) -> int:
-    #     """Get the number of children"""
-    #     return len(self.children)
+
+
+def create_embeddings(content: str) -> List[float]:
+    """Create embeddings for a given content"""
+    return SentenceTransformer('all-MiniLM-L6-v2').encode(content)
     
 def find_parent_node(graph: GraphNode, target_url: str) -> Optional[GraphNode]:
     """
@@ -187,7 +199,7 @@ def find_node_by_url(graph: GraphNode, target_url: str) -> Optional[GraphNode]:
     
 
 
-async def deep_crawl(final_md):
+async def deep_crawl():
     """deep crawl with bfs"""
 
     print("\n ===== deep crawling == ")
@@ -206,8 +218,10 @@ async def deep_crawl(final_md):
             config = CrawlerRunConfig(deep_crawl_strategy = deep_crawl_strategy) ,
         )
         
-        graph : GraphNode
+        root : GraphNode
+        graph : Graph = Graph()
         
+        # graph.metadata = {'root_url' : doc_url }
 
 
         print(f"deep crawl returned  : {len(results)} pages ")
@@ -223,21 +237,43 @@ async def deep_crawl(final_md):
 
             # Debug: Print score information
             # print(f"URL: {result.url[:50]}... | Depth: {depth} | Score: {score:.3f}")
-            
+            keywords = extract_keywords_textrank(result.markdown, top_k)
+            embedding = create_embeddings(result.markdown)
+
             if result.url == doc_url : 
-                graph = GraphNode(url=doc_url, content=result.markdown, depth=0, score=1.0, children = [] )
+                # keywords = extract_keywords_textrank(result.markdown, top_k)
+                root = GraphNode(url=doc_url, content=result.markdown, depth=0, score=score, keywords = keywords , embedding = embedding , children = [] )
+                graph.nodes[doc_url] = root
                 continue
+            
             try : 
-                parent_node = find_node_by_url(graph , parent_url)
-                parent_node.add_child(GraphNode(url=result.url, content=result.markdown, depth=depth, score=1.0, children = [] ))
+                
+                parent_node = graph.nodes[parent_url]
+                child_node = GraphNode(url=result.url, content=result.markdown, depth=depth, score=score , keywords = keywords , embedding = embedding , children = [] )
+                parent_node.add_child(child_node)
+                graph.nodes[result.url] = child_node
+                
+                common_keywords = get_common_keywords(parent_node.keywords , keywords)
+                semantic_similarity = len(common_keywords) / max(len(parent_node.keywords), len(keywords), 1)
+                
+                
+                graph.edges.append({
+                    'source' : parent_node.url , 
+                    'target' : result.url , 
+                    'relation_type' : 'NAVIGATES_TO' , 
+                    'common_keywords' : common_keywords , 
+                    'semantic_similarity' : semantic_similarity
+                })
             except Exception as e:
                 print(f"Error adding child: {e}")
                 continue
-            
-                
-                
-    # print_graph_structure(graph)
-                
+        
+        graph.metadata = {
+            'total_nodes' : len(graph.nodes),  
+            'max_depth' : max(node.depth for node in graph.nodes.values()) , 
+            'root_url' : doc_url
+        }
+        
     return graph 
 
 def print_graph_structure(root: GraphNode):
@@ -327,7 +363,7 @@ def print_graph_structure(root: GraphNode):
     print("=" * 80)
                     
 
-     
+
 def save_graph(graph: GraphNode, filepath: str):
     """Save the knowledge graph to disk with streamlined structure"""
     
@@ -371,7 +407,7 @@ def save_graph(graph: GraphNode, filepath: str):
         serializable_graph["nodes"][node.url] = {
             "source_url": node.url,
             "content": node.content,
-            "embedding": getattr(node, 'embedding', None),  # Will be None initially
+            # "embedding": getattr(node, 'embedding', None),  # Will be None initially
             "depth": node.depth,
             "score": node.score,
             "keywords": node_keywords.get(node.url, [])
@@ -401,75 +437,23 @@ def save_graph(graph: GraphNode, filepath: str):
     print(f"💾 Knowledge graph saved to {filepath}")
     print(f"📊 Added keywords to {len(all_nodes)} nodes and {len(serializable_graph['edges'])} edges")
 
-# def calculate_link_weight(source_url: str, target_url: str, node_map: Dict[str, GraphNode], max_depth: int) -> Optional[float]:
-#     """
-#     Return a depth-based penalty **only** when the two URLs are in the same
-#     ancestor ⇄ descendant chain.
-
-#     • If `target_url` is a (grand)child of `source_url` **or vice-versa**,
-#       the weight is 1 - (absolute depth difference / max_depth)
-#     • For any pair of URLs that do **not** share a direct ancestry path,
-#       the function returns `None`.
-#     """
-    
-#     # Get the nodes from the mapping
-#     source_node = node_map.get(source_url)
-#     target_node = node_map.get(target_url)
-    
-#     if source_node is None or target_node is None:
-#         return None
-
-#     def is_ancestor(ancestor_node: GraphNode, descendant_url: str) -> bool:
-#         """DFS to see whether ancestor_node reaches descendant_url through children."""
-#         stack = [ancestor_node]
-#         visited = set()
-        
-#         while stack:
-#             current = stack.pop()
-#             if current.url == descendant_url:
-#                 return True
-#             if current.url in visited:
-#                 continue
-#             visited.add(current.url)
-#             stack.extend(current.children)
-        
-#         return False
-    
-#     all_nodes: List[GraphNode] = []
-#     stack: List[GraphNode] = [root]
-#     while stack:
-#         node = stack.pop()
-#         all_nodes.append(node)
-#         stack.extend(node.children)
-
-#     # Sort by depth for nicer visual ordering
-#     all_nodes.sort(key=lambda n: n.depth)
-
-
-#     # Check if there's an ancestral relationship
-#     if is_ancestor(source_node, target_url) or is_ancestor(target_node, source_url):
-#         if max_depth == 0:
-#             return 1.0  # Avoid division by zero
-#         depth_diff = abs(source_node.depth - target_node.depth)
-#         return max(0.0, 1.0 - (depth_diff / max_depth))
-    
-#     return None
-        
-async def main(): 
+async def main(url : str , max_depth : int , max_pages : int ) -> GraphNode: 
     print("======= running deep crwal ===============" ) 
 
-    final_md = []
+    # final_md = []
     
-    print(f"output path : {OUTPUT_DIR}")
+    # print(f"output path : {OUTPUT_DIR}")
 
-    graph  = await deep_crawl(final_md)
+    graph  = await deep_crawl()
+    
+    return graph
     
     # save_graph(graph , "kg.json")
     
-    OUTPUT_PATH = os.path.join(OUTPUT_DIR , "kg.json")
-    save_graph(graph, OUTPUT_PATH)
+    # OUTPUT_PATH = os.path.join(OUTPUT_DIR , "kg.json")
+    # save_graph(graph, OUTPUT_PATH)
 
-    print("done")
+    # print("done")
 
     
 

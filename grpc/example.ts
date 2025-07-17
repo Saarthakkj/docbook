@@ -11,7 +11,8 @@ async function main(){
 		'--max_pages' , '30', 
 		'--max_depth' , '3', 	
 		'--url', 'https://grpc.io/docs', 
-		'--output_dir', 'grpc/'
+		'--output_dir' , 'grpc/' ,
+		'--name', 'grpc_docs'
 	]);
 
 	stream.on('data', (response: any) => {

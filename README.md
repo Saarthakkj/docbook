@@ -83,6 +83,64 @@ For the latest features, install from the main branch:
 ...
 ```
 
+## gRPC Server Usage
+
+The project includes a gRPC server in the `grpc/` directory that allows remote execution of `main.py` and `deepcrawl.py` scripts.
+
+### Starting the gRPC Server
+
+1. Navigate to the `grpc/` directory:
+   ```bash
+   cd grpc
+   ```
+
+2. Run the server:
+   ```bash
+   python server.py
+   ```
+   This starts the gRPC server on `localhost:50051`.
+
+### Using the TypeScript Client
+
+The `grpc/` directory contains a TypeScript client for interacting with the server.
+
+1. Install dependencies (if not already done):
+   ```bash
+   npm install
+   ```
+
+2. To run a script, use or modify `example.ts`. For example, to run `main.py`:
+
+   ```typescript
+   import PythonScriptRunner from './client';
+
+   async function runMain() {
+     const runner = new PythonScriptRunner();
+     const result = await runner.executeScript('main', [
+       '--url', 'https://docs.example.com/',
+       '--name', 'example'
+     ]);
+     console.log('Exit code:', result.exitCode);
+     console.log('Stdout:', result.stdout);
+     console.log('Stderr:', result.stderr);
+   }
+
+   runMain();
+   ```
+
+3. Run the TypeScript file:
+   ```bash
+   ts-node example.ts
+   ```
+
+   For streaming output (real-time stdout/stderr), use `executeScriptStream` as shown in `example.ts`.
+
+### Running deepcrawl.py via gRPC
+
+Similarly, use script_name 'deepcrawl' with appropriate arguments.
+
+For more details, see `grpc/client.ts` and `grpc/example.ts`.
+
 ## How It Works
 
 1. **Deep Crawling**: Extracts content from documentation websites using Crawl4AI

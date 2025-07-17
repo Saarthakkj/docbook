@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
+
+
+'''
+TODO : 
+    1. check for existing json file for this
+    2. save graph dataclasss file as args.name in the same directory
+'''
+
 """
 GraphRAG Implementation for Crawl4AI Documentation
 Integrates deepcrawl.py output with graphrag_system.py for intelligent querying
 """
-
+from deepcrawl import GraphNode , Graph
+import deepcrawl
 import asyncio
 import argparse
 import sys
@@ -12,9 +21,10 @@ import os
 import json
 import os
 from dotenv import load_dotenv
-from enhanced_graphrag import EnhancedGraphRAGSystem, create_graphrag_from_kg_json , create_graphrag_from_enhanced_kg
+from enhanced_graphrag import EnhancedGraphRAGSystem, create_graphrag_from_kg_json 
 
 load_dotenv()
+
 
 
 def parse_arguments(): 
@@ -39,80 +49,88 @@ Examples :
     parser.add_argument ("--max_pages" , type = int ,  help = "maximum number of pages")
 
     parser.add_argument("--url" , type = str  , required = True, help = "doc url")
-    parser.add_argument("--output_dir" , type = str  , required = True, help = "output dir")
+    parser.add_argument("--output_dir" , type = str  , required = True, help = "output directory")
+
+    parser.add_argument("--name" , type = str  , required = True, help = "name of your documentation")
 
 
     return parser.parse_args()
 
 
-async def run_deepcrawl(url : str , max_depth : int , max_pages : int , output_dir : str = "kg.json"):
+async def run_deepcrawl(url : str , max_depth : int , max_pages : int ) -> Graph:
     """run deepcrawl.py with specified parameters"""
     
     
-    print(f" URL : {url} ")
-    print(f" Max depth : {max_depth}")
-    print(f"output : {output_dir}")
+    return await deepcrawl.main(url , max_depth , max_pages )
     
-    cmd = [sys.executable , "deepcrawl.py"] 
     
-    if max_depth is not None : 
-        cmd.extend(["--max_depth" , str(max_depth)])
-    if max_pages is not None : 
-        cmd.extend(["--max_pages" , str(max_pages)])
+    # print(f" URL : {url} ")
+    # print(f" Max depth : {max_depth}")
+    # print(f"output : {output_dir}")
+    
+    # cmd = [sys.executable , "deepcrawl.py"] 
+    
+    # if max_depth is not None : 
+    #     cmd.extend(["--max_depth" , str(max_depth)])
+    # if max_pages is not None : 
+    #     cmd.extend(["--max_pages" , str(max_pages)])
         
         
-    cmd.extend(["--url" , url])
+    # cmd.extend(["--url" , url])
         
-    cmd.extend(["--output_dir" , output_dir])
+    # cmd.extend(["--output_dir" , output_dir])
     
     
     
-    # cmd = [
-    #     sys.executable , "deepcrawl.py" , 
-    #     "--url" , url , 
-    #     '--max_depth' , str(max_depth) , 
-    #     '--max_pages' , str(max_pages) , 
-    #     '--output_dir' , output_dir
-    # ] 
+    # # cmd = [
+    # #     sys.executable , "deepcrawl.py" , 
+    # #     "--url" , url , 
+    # #     '--max_depth' , str(max_depth) , 
+    # #     '--max_pages' , str(max_pages) , 
+    # #     '--output_dir' , output_dir
+    # # ] 
     
     
-    try : 
-        print(" executing deepcrawl.py .... ")
+    # try : 
+    #     print(" executing deepcrawl.py .... ")
         
-        # result = subprocess.run(cmd , check = True)
+    #     # result = subprocess.run(cmd , check = True)
         
-        process = subprocess.Popen(cmd , stdout = subprocess.PIPE , stderr = subprocess.PIPE ,  text = True , bufsize =1 , universal_newlines = True)
-        # while True :
-        #     output = process.stdout.readline()
-        #     if output == '' and process.poll() is not None :
-        #         break
-        #     else: print(output.strip())
-        # return_code = process.poll()
+    #     process = subprocess.Popen(cmd , stdout = subprocess.PIPE , stderr = subprocess.PIPE ,  text = True , bufsize =1 , universal_newlines = True)
+    #     # while True :
+    #     #     output = process.stdout.readline()
+    #     #     if output == '' and process.poll() is not None :
+    #     #         break
+    #     #     else: print(output.strip())
+    #     # return_code = process.poll()
         
-        output, errors = process.communicate()
+    #     output, errors = process.communicate()
 
-        print(output)
-        print(errors)
+    #     print(output)
+    #     print(errors)
 
 
         
-        # if return_code != 0:
-        #     print(f"❌ Deepcrawl failed with return code: {return_code}")
-        #     print(f" error : {process.stderr}")
-        #     raise subprocess.CalledProcessError(return_code, cmd)
+    #     # if return_code != 0:
+    #     #     print(f"❌ Deepcrawl failed with return code: {return_code}")
+    #     #     print(f" error : {process.stderr}")
+    #     #     raise subprocess.CalledProcessError(return_code, cmd)
         
-        # print("\nDeepcrawl completed successfully! ")
+    #     # print("\nDeepcrawl completed successfully! ")
         
         
-    except Exception as e : 
-        print(f" Unexpected error : {e}")
-        raise
+    # except Exception as e : 
+    #     print(f" Unexpected error : {e}")
+    #     raise
 
 async def main():
     """Main function to demonstrate GraphRAG implementation"""
     
     
     args = parse_arguments()
+    
+    
+    
     # Check for required API key
     gemini_api_key = os.getenv("gemini_api_key")
     if not gemini_api_key:
@@ -124,53 +142,59 @@ async def main():
     print("=" * 60)
     
     
-    # Step 1: Load the knowledge graph from deepcrawl.py output
-    print("📂 Loading knowledge graph from kg.json...")
     
-    kg_path = os.path.join(args.output_dir , "kg.json")
-    try:
-        with open(kg_path ,  "r", encoding="utf-8") as f:
-            kg_data = json.load(f)
-        
-        print(f"✅ Loaded knowledge graph:")
-        print(f"   - Nodes: {len(kg_data['nodes'])}")
-        print(f"   - Edges: {len(kg_data['edges'])}")
-        print(f"   - Root URL: {kg_data['metadata']['root_url']}")
-        
-    except Exception as e:
-        print(f"❌ Error loading kg.json. Running deepcrawl.py")
-        await run_deepcrawl(args.url , args.max_depth , args.max_pages , args.output_dir)
-        
-    # except json.JSONDecodeError as e:
-    #     print(f"❌ Error loading kg.json: {e}")
-    #     return
+    
+    
+    # Step 1: Load the knowledge graph from deepcrawl.py output
+    print("📂 Loading graphRG system.....")
     
     rag_system = None
     
-    # Check if enhanced_kg.json exists
-    enhanced_kg_path = os.path.join(args.output_dir  , "enhanced_kg.json")
+    #check for existing json file for this
+    
+    # kg_path = os.path.join(sys.path , args.name)
+    # if os.path.exists(kg_path):
+    #     print(f"Found existing file for the given name {args.name}")
+    #     # if exists -> then just call the graphRAG implementation
+    # else:
+    #     raise FileNotFoundError
+    graph = await run_deepcrawl(args.url , args.max_depth , args.max_pages)
+    rag_system = await create_graphrag_from_kg_json(
+        graph, 
+        gemini_api_key
+    )
+    print("🤖 GraphRAG Query Interface Ready!")
+    print(f"Ask questions about {args.name} documentation.")
+    print("Type 'quit' to exit.")
+    print("=" * 60)
     
     
-    # Replace the problematic section in main() with:
-    if os.path.exists(enhanced_kg_path):
-        print(f"✅ Found existing enhanced knowledge graph: {enhanced_kg_path}")
-        print("Loading existing enhanced GraphRAG system...")
+    while True:
+        print("\n" + "-" * 40)
+        user_query = input("🔍 Enter your question: ").strip()
         
-        # Load from enhanced_kg.json with fallback to original kg.json for content
-        rag_system = await create_graphrag_from_enhanced_kg(
-            enhanced_kg_path, 
-            gemini_api_key, 
-            original_kg_path=kg_path
-        )
-    else:
-        # Step 2: Initialize Enhanced GraphRAG system directly from kg.json
-        print("\n🧠 Initializing Enhanced GraphRAG system...")
-        rag_system = await create_graphrag_from_kg_json(kg_path, gemini_api_key)
+        if user_query.lower() in ['quit', 'exit', 'q']:
+            print("👋 Thanks for using GraphRAG! Goodbye!")
+            break
         
-        # Step 3: Save the enhanced knowledge graph
-        print("💾 Saving enhanced knowledge graph...")
-        rag_system.save_enhanced_kg(enhanced_kg_path)
+        if not user_query:
+            continue
         
+        try:
+            print("\n🔎 Processing your query...")
+            answer = await rag_system.retrieve_and_generate(user_query)
+            print("\n📝 Answer:")
+            print("=" * 50)
+            print(answer)
+            print("=" * 50)
+            
+        except Exception as e:
+            print(f"❌ Error processing query: {e}")
+            print("Please try a different question.")
+
+    
+    
+
     
 
 # def convert_kg_to_url_graph(kg_data):
