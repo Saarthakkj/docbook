@@ -1,5 +1,7 @@
 
 # DocBook: GraphRAG Documentation Assistant
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Saarthakkj/docbook)
+
 
 A Python-based system that crawls documentation websites using Crawl4AI, builds a knowledge graph with embeddings and relationships, and provides intelligent question-answering capabilities using Retrieval-Augmented Generation (RAG) powered by Google's Gemini API.
 
