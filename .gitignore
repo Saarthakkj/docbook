@@ -8,6 +8,7 @@ __pycache__
 kg.json
 enhanced_kg.json
 grpc
+.cursor/rules
 grpc/kg.json
 grpc/enhanced_kg.json
 ragtest/input
