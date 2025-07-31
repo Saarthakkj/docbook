@@ -1,4 +1,5 @@
 import asyncio
+import numpy as np
 import os
 import json
 import base64
@@ -187,6 +188,9 @@ async def deep_crawl(doc_url: str, max_depth: Optional[int], max_pages: Optional
     
     if max_pages is not None : 
         deep_crawl_strategy.max_pages = max_pages
+
+
+    model = SentenceTransformer('all-MiniLM-L6-v2')
     
     
 
@@ -217,18 +221,18 @@ async def deep_crawl(doc_url: str, max_depth: Optional[int], max_pages: Optional
             # Debug: Print score information
             # print(f"URL: {result.url[:50]}... | Depth: {depth} | Score: {score:.3f}")
             keywords = extract_keywords_textrank(result.markdown, top_k)
-            embedding = create_embeddings(result.markdown)
+            #embedding = create_embeddings(result.markdown)
 
             if result.url == doc_url : 
                 # keywords = extract_keywords_textrank(result.markdown, top_k)
-                root = GraphNode(url=doc_url, content=result.markdown, depth=0, score=score, keywords = keywords , embedding = embedding , children = [] )
+                root = GraphNode(url=doc_url, content=result.markdown, depth=0, score=score, keywords = keywords , embedding =model.encode(result.markdown) , children = [] )
                 graph.nodes[doc_url] = root
                 continue
             
             try : 
                 
                 parent_node = graph.nodes[parent_url]
-                child_node = GraphNode(url=result.url, content=result.markdown, depth=depth, score=score , keywords = keywords , embedding = embedding , children = [] )
+                child_node = GraphNode(url=result.url, content=result.markdown, depth=depth, score=score , keywords = keywords , embedding = model.encode(result.markdown) ,  children = [] )
                 parent_node.add_child(child_node)
                 graph.nodes[result.url] = child_node
                 
@@ -340,6 +344,17 @@ def print_graph_structure(root: GraphNode):
         print(f"   Leaf Nodes: {sum(1 for c in children_counts if c == 0)}")
 
     print("=" * 80)
+
+
+import math
+
+def clean_embedding(embedding):
+    if embedding is None:
+        print(f" Returning None here")
+        return None
+    if isinstance(embedding, np.ndarray):
+        embedding = embedding.tolist()
+    return [x if isinstance(x, (int, float)) and not (math.isnan(x) or math.isinf(x)) else None for x in embedding]
                     
 
 
@@ -362,7 +377,7 @@ def save_graph(graph: GraphNode, filepath: str):
     # Extract keywords for all nodes
     node_keywords = {}
     for node in all_nodes:
-        print(f"  📝 Processing keywords for: {node.url[:50]}...")
+    #    print(f"  📝 Processing keywords for: {node.url[:50]}...")
         keywords = extract_keywords_textrank(node.content, top_k)
         node_keywords[node.url] = keywords
     
@@ -386,7 +401,7 @@ def save_graph(graph: GraphNode, filepath: str):
         serializable_graph["nodes"][node.url] = {
             "source_url": node.url,
             "content": node.content,
-            # "embedding": getattr(node, 'embedding', None),  # Will be None initially
+            "embedding": clean_embedding(node.embedding),
             "depth": node.depth,
             "score": node.score,
             "keywords": node_keywords.get(node.url, [])
@@ -409,9 +424,10 @@ def save_graph(graph: GraphNode, filepath: str):
                 "common_keywords": common_keywords,
                 "semantic_similarity": len(common_keywords) / max(len(parent_keywords), len(child_keywords), 1)
             })
-
+    
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(serializable_graph, f, indent=2, ensure_ascii=False)
+        json.dump(serializable_graph, f, indent=2, ensure_ascii=False , allow_nan = False)
     
     print(f"💾 Knowledge graph saved to {filepath}")
     print(f"📊 Added keywords to {len(all_nodes)} nodes and {len(serializable_graph['edges'])} edges")

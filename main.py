@@ -152,9 +152,12 @@ async def main():
     rag_system = None
     
     kg_path = os.path.join(args.output_dir, f"{args.name}_kg.json")
+
     if os.path.exists(kg_path):
         print(f"Found existing knowledge graph at {kg_path}")
         with open(kg_path, 'r', encoding='utf-8') as f:
+            raw = f.read()
+            #print(f" raw : {raw} and len : {len(raw)}")
             kg_data = json.load(f)
         graph = Graph()
         graph.metadata = kg_data['metadata']
@@ -166,8 +169,8 @@ async def main():
                 depth=data['depth'],
                 score=data['score'],
                 keywords=data['keywords'],
-                embedding=[],
-                children=[]
+                embedding=['embedding'],
+                children=['children']
             )
             node_map[url] = node
             graph.nodes[url] = node
@@ -222,33 +225,6 @@ async def main():
 
     
 
-# def convert_kg_to_url_graph(kg_data):
-#     """
-#     Convert kg.json format to the format expected by GraphRAG system
-    
-#     Args:
-#         kg_data: The loaded kg.json data
-        
-#     Returns:
-#         dict: URL graph in GraphRAG format
-#     """
-#     url_graph = {}
-    
-#     # Convert nodes to the expected format
-#     for url, node_data in kg_data["nodes"].items():
-#         url_graph[url] = {
-#             "content": node_data["content"],
-#             "keywords": node_data.get("keywords", []),
-#             "depth": node_data.get("depth", 0),
-#             "score": node_data.get("score", 1.0),
-#             # Additional metadata that might be useful
-#             "metadata": {
-#                 "source_url": node_data["source_url"],
-#                 "embedding": node_data.get("embedding")
-#             }
-#         }
-    
-#     return url_graph
 
 
 if __name__ == "__main__":

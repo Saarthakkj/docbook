@@ -40,8 +40,8 @@ load_dotenv()
 
 @dataclass
 class EnhancedEntity:
-    name: str
-    type: str
+    #name: str
+  #  type: str
     # description: str
     source_urls: List[str]
     keywords: List[str]
@@ -67,7 +67,7 @@ class EnhancedGraphRAGSystem:
         self.entities: Dict[str, EnhancedEntity] = {}
         self.relationships: List[EnhancedRelationship] = []
         self.knowledge_graph = nx.DiGraph()
-        self.url_content = {}  # Store full content by URL
+        #self.url_content = {}  # Store full content by URL
         self.keyword_index = defaultdict(list)  # Keyword -> URLs that contain it
         self.graph = graph
         # self.kg_path = kg_path
@@ -101,20 +101,15 @@ class EnhancedGraphRAGSystem:
                 self.keyword_index[kw.lower()].append(node.url)
     
         self._build_networkx_graph()
-        self._create_entities_from_nodes(list(self.graph.nodes.values()))
+        nodes_list = []
+        for _  in self.graph.nodes  : 
+            nodes_list.append(self.graph.nodes[_])
+
+#        print(f" nodes_list : {nodes_list[0]}")
+#        print(f"\n type of graph nodes : {type(nodes_list)}\n\n")
+        self._create_entities_from_nodes(nodes_list)
         self._create_relationships_from_edges(self.graph.edges)
-                
-                
-        
-            
-        
-            
-        
-        
-        
-        
-        
-        
+                       
         # """Load knowledge graph directly from kg.json format"""
         # print("📥 Loading knowledge graph from kg.json format...")
         
@@ -126,7 +121,7 @@ class EnhancedGraphRAGSystem:
         #     for keyword in node_data.get("keywords", []):
         
         # # Create entities from nodes
-        self._create_entities_from_nodes(self.graph.nodes)
+#        self._create_entities_from_nodes(self.graph.nodes)
         
         # # Create relationships from edges
         # self._create_relationships_from_edges(kg_data["edges"])
@@ -144,14 +139,16 @@ class EnhancedGraphRAGSystem:
         print("🏗️  Creating entities from nodes...")
         
         for  node in all_nodes:
+            #print(f" node  : {node}")
+            #print(f" graphnode : {node.url} and {node.content} ")
 
             entity = EnhancedEntity(
-                name='',  # Placeholder, as original is commented
-                type='',  # Placeholder
-                description='',  # Placeholder
+                #name='',  # Placeholder, as original is commented
+               #type='',  # Placeholder
                 source_urls=[node.url],
                 keywords=node.keywords,
                 content_snippet=node.content,
+                embedding = node.embedding ,  
                 depth=node.depth,
                 score=node.score
             )
@@ -306,7 +303,7 @@ class EnhancedGraphRAGSystem:
                 self.knowledge_graph.add_edge(
                     rel.source,
                     rel.target,
-                    relation_type=rel.relation_type,
+                 #   relation_type=rel.relation_type,
                     # weight=rel.weight,
                     common_keywords=rel.common_keywords,
                     semantic_similarity=rel.semantic_similarity
@@ -330,13 +327,13 @@ class EnhancedGraphRAGSystem:
         # relevant_content = self._retrieve_ranked_content(expanded_context, query)
         
         # Step 4: Generate answer using LLM
-        answer = await self._generate_enhanced_answer(query, expanded_context, expanded_context)
+        answer = await self._generate_enhanced_answer(query, expanded_context)
         
         return answer
     
     async def _find_relevant_urls(self, query: str, top_k: int) -> List[str]:
         """Find relevant URLs using keyword matching and semantic similarity"""
-        
+#        print(f" query in input : {query}") 
         # Method 1: Keyword-based retrieval
         query_words = set(query.lower().split())
         keyword_scores = defaultdict(float)
@@ -352,9 +349,19 @@ class EnhancedGraphRAGSystem:
         query_embedding = self.embedding_model.encode(query)
         
         for url, entity in self.entities.items():
-            similarity = cosine_similarity(
-                query_embedding.reshape(1, -1),
-                entity.embedding.reshape(1, -1)
+            #print(f" {query_embedding == None} or {entity.embedding == None}")
+            #print(f" shape : {query_embedding.shape} , {embedding.shape}")
+            query_embedding= query_embedding.reshape(1 , -1)
+            entity.embedding = np.array(entity.embedding).reshape(1 , -1)
+            #print(f" {entity.embedding}")
+            #print(f" shape : {entity.embedding.shape}")
+            
+            #print(f" shape : {query_embedding.shape} , {entity.embedding.shape}")
+            
+            #print(f" query.")
+            similarity =  cosine_similarity(
+                query_embedding,
+                entity.embedding
             )[0][0]
             similarity_scores[url] = similarity
     
@@ -421,9 +428,68 @@ class EnhancedGraphRAGSystem:
             "relationships": important_relationships,
             "entities": [self.entities[url] for url in expanded_urls if url in self.entities]
         }
+
+
+    async def _generate_enhanced_answer(self, query: str, context: Dict) -> str:
+        """Generate enhanced answer using LLM with structured context"""
+        
+        """# Prepare structured context
+        context_sections = []
+        
+        # Add content from top relevant sources
+        for item in content_items[:5]:  # Top 5 most relevant
+            section = f"**{item['entity_name']} ({item['entity_type']})**\n"
+            section += f"Source: {item['url']}\n"
+            if item['keywords']:
+                section += f"Keywords: {', '.join(item['keywords'][:8])}\n"
+            section += "Content:\n"
+            for snippet in item['snippets']:
+                section += f"- {snippet}\n"
+            context_sections.append(section)
+        """
+        # Add relationship information
+        relationships_text = ""
+        if context['relationships']:
+            relationships_text = "\n**Related Concepts:**\n"
+
+            for rel in context['relationships']:
+                source_name = self._extract_entity_name(rel['source'])
+                target_name = self._extract_entity_name(rel['target'])
+                relationships_text += f"- {source_name} → {target_name}"
+                if rel['common_keywords']:
+                    relationships_text += f" (shared: {', '.join(rel['common_keywords'][:3])})"
+                relationships_text += "\n"
+        
+        # Construct prompt
+        prompt = f"""
+        Based on the following  documentation content, answer the user's question comprehensively and accurately.
+
+        Question: {query}
+
+
+        {relationships_text}
+
+        Instructions:
+        1. Provide a clear, comprehensive answer to the question
+        2. Use specific information from the documentation
+        3. Include relevant code examples or commands when applicable
+        4. Mention specific URLs when referencing particular features
+        5. If the question asks about multiple topics, organize your answer with clear sections
+        6. Be practical and actionable in your recommendations
+
+        Answer:
+        """
+        
+        try:
+            response = self.llm.send_message_stream(prompt)
+            return response.text
+        except Exception as e:
+            return f"Error generating answer: {e}"
     
-    def _retrieve_ranked_content(self, context: Dict, query: str) -> List[Dict]:
-        """Retrieve and rank content based on relevance"""
+
+    
+"""def _retrieve_ranked_content(self, context: Dict, query: str) -> List[Dict]:
+        Retrieve and rank content based on relevance
         
         content_items = []
         query_words = set(query.lower().split())
@@ -467,7 +533,7 @@ class EnhancedGraphRAGSystem:
         # Sort by relevance and return top items
         content_items.sort(key=lambda x: x["relevance_score"], reverse=True)
         return content_items[:10]  # Limit to top 10 most relevant
-    
+"""
     # def _extract_relevant_snippets(self, content: str, query_words: Set[str], max_snippets: int = 3) -> List[str]:
     #     """Extract relevant snippets from content based on query words"""
         
@@ -492,64 +558,7 @@ class EnhancedGraphRAGSystem:
     #                 break
         
     #     return snippets
-    
-    async def _generate_enhanced_answer(self, query: str, content_items: List[Dict], context: Dict) -> str:
-        """Generate enhanced answer using LLM with structured context"""
-        
-        # Prepare structured context
-        context_sections = []
-        
-        # Add content from top relevant sources
-        for item in content_items[:5]:  # Top 5 most relevant
-            section = f"**{item['entity_name']} ({item['entity_type']})**\n"
-            section += f"Source: {item['url']}\n"
-            if item['keywords']:
-                section += f"Keywords: {', '.join(item['keywords'][:8])}\n"
-            section += "Content:\n"
-            for snippet in item['snippets']:
-                section += f"- {snippet}\n"
-            context_sections.append(section)
-        
-        # Add relationship information
-        relationships_text = ""
-        if context['relationships']:
-            relationships_text = "\n**Related Concepts:**\n"
-            for rel in context['relationships'][:5]:
-                source_name = self._extract_entity_name(rel['source'])
-                target_name = self._extract_entity_name(rel['target'])
-                relationships_text += f"- {source_name} → {target_name}"
-                if rel['common_keywords']:
-                    relationships_text += f" (shared: {', '.join(rel['common_keywords'][:3])})"
-                relationships_text += "\n"
-        
-        # Construct prompt
-        prompt = f"""
-        Based on the following Crawl4AI documentation content, answer the user's question comprehensively and accurately.
-
-        Question: {query}
-
-        Documentation Content:
-        {chr(10).join(context_sections)}
-
-        {relationships_text}
-
-        Instructions:
-        1. Provide a clear, comprehensive answer to the question
-        2. Use specific information from the documentation
-        3. Include relevant code examples or commands when applicable
-        4. Mention specific URLs when referencing particular features
-        5. If the question asks about multiple topics, organize your answer with clear sections
-        6. Be practical and actionable in your recommendations
-
-        Answer:
-        """
-        
-        try:
-            response = await self.llm.send_message_stream(prompt)
-            return response.text
-        except Exception as e:
-            return f"Error generating answer: {e}"
-    
+   
     # def save_enhanced_kg(self, filepath: str):
     #     """Save the enhanced knowledge graph"""
         
