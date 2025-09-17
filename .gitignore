@@ -9,6 +9,7 @@ kg.json
 enhanced_kg.json
 grpc
 .cursor/rules
+output/
 grpc/kg.json
 grpc/enhanced_kg.json
 ragtest/input
