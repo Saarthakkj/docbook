@@ -47,14 +47,13 @@ class EnhancedEntity:
     keywords: List[str]
     content_snippet: str
     depth: int
-    score: float
-    embedding: Optional[np.ndarray] = None
+    embedding: List[float]
 
 @dataclass
 class EnhancedRelationship:
     source: str
     target: str
-    relation_type: str
+    # relation_type: str
     # description: str
     # confidence: float
     source_urls: List[str]
@@ -78,7 +77,7 @@ class EnhancedGraphRAGSystem:
         
         # Initialize Gemini
         # genai.configure(api_key=gemini_api_key)
-        client = genai.Client(api_key='GEMINI_API_KEY')
+        client = genai.Client(api_key=os.environ['gemini_api_key'])
         chat = client.chats.create(model='gemini-2.0-flash')
         self.llm = chat
         # for chunk in chat.send_message_stream('tell me a story'):
@@ -139,18 +138,12 @@ class EnhancedGraphRAGSystem:
         print("🏗️  Creating entities from nodes...")
         
         for  node in all_nodes:
-            #print(f" node  : {node}")
-            #print(f" graphnode : {node.url} and {node.content} ")
-
             entity = EnhancedEntity(
-                #name='',  # Placeholder, as original is commented
-               #type='',  # Placeholder
                 source_urls=[node.url],
                 keywords=node.keywords,
                 content_snippet=node.content,
                 embedding = node.embedding ,  
                 depth=node.depth,
-                score=node.score
             )
             
             self.entities[node.url] = entity
@@ -163,7 +156,7 @@ class EnhancedGraphRAGSystem:
             relationship = EnhancedRelationship(
                 source=edge["source"],
                 target=edge["target"],
-                relation_type=edge["relation_type"],
+                # relation_type=edge["relation_type"],
                 # description=f"Navigation from {self._extract_entity_name(edge['source'])} to {self._extract_entity_name(edge['target'])}",
                 source_urls=[edge["source"], edge["target"]],
                 common_keywords=edge.get("common_keywords", []),
@@ -172,117 +165,19 @@ class EnhancedGraphRAGSystem:
             
             self.relationships.append(relationship)
     
-    # def _extract_entity_name(self, url: str) -> str:
-    #     """Extract a readable entity name from URL"""
-    #     if url.endswith('/'):
-    #         url = url[:-1]
+    def _extract_entity_name(self, url: str) -> str:
+        """Extract a readable entity name from URL"""
+        if url.endswith('/'):
+            url = url[:-1]
         
-    #     parts = url.split('/')
-    #     if len(parts) >= 2:
-    #         name = parts[-1].replace('-', ' ').replace('_', ' ').title()
-    #         if name:
-    #             return name
+        parts = url.split('/')
+        if len(parts) >= 2:
+            name = parts[-1].replace('-', ' ').replace('_', ' ').title()
+            if name:
+                return name
         
-    #     return url.split('/')[-1] or "Home"
-        
-    # def load_enhanced_kg(self, enhanced_kg_path: str, original_kg_path: str = None):
-    #     """Load enhanced knowledge graph from saved JSON file"""
-    #     print(f"📥 Loading enhanced knowledge graph from {enhanced_kg_path}...")
-        
-    #     with open(enhanced_kg_path, 'r', encoding='utf-8') as f:
-    #         enhanced_data = json.load(f)
-        
-    #     # Clear existing data
-    #     self.entities.clear()
-    #     self.relationships.clear()
-    #     self.knowledge_graph.clear()
-    #     self.keyword_index.clear()
-    #     self.url_content.clear()
-        
-    #     # Load entities
-    #     print("🏗️  Reconstructing entities...")
-    #     for url, entity_data in enhanced_data["entities"].items():
-    #         # Convert embedding back to numpy array if it exists
-    #         embedding = None
-    #         if entity_data["embedding"] is not None:
-    #             embedding = np.array(entity_data["embedding"])
+        return url.split('/')[-1] or "Home"
             
-    #         entity = EnhancedEntity(
-    #             name=entity_data["name"],
-    #             type=entity_data["type"],
-    #             description=entity_data["description"],
-    #             source_urls=entity_data.get("source_urls", [url]),  # Fallback to URL if not saved
-    #             keywords=entity_data["keywords"],
-    #             content_snippet=entity_data["content_snippet"],
-    #             depth=entity_data["depth"],
-    #             score=entity_data["score"],
-    #             embedding=embedding
-    #         )
-            
-    #         self.entities[url] = entity
-        
-    #     # Load relationships
-    #     print("🔗 Reconstructing relationships...")
-    #     for rel_data in enhanced_data["relationships"]:
-    #         relationship = EnhancedRelationship(
-    #             source=rel_data["source"],
-    #             target=rel_data["target"],
-    #             relation_type=rel_data["relation_type"],
-    #             description=rel_data.get("description", ""),
-    #             # confidence=rel_data["pr"],
-    #             source_urls=rel_data.get("source_urls", [rel_data["source"], rel_data["target"]]),
-    #             common_keywords=rel_data["common_keywords"],
-    #             semantic_similarity=rel_data["semantic_similarity"],
-    #             # weight=rel_data["weight"]
-    #         )
-            
-    #         self.relationships.append(relationship)
-        
-    #     # Load keyword index
-    #     print("🏷️  Reconstructing keyword index...")
-    #     for keyword, urls in enhanced_data["keyword_index"].items():
-    #         self.keyword_index[keyword] = urls
-        
-    #     # Load url_content from original kg.json if path provided
-    #     if original_kg_path and os.path.exists(original_kg_path):
-    #         print("📄 Loading original content from kg.json...")
-    #         with open(original_kg_path, 'r', encoding='utf-8') as f:
-    #             kg_data = json.load(f)
-            
-    #         for url, node_data in kg_data["nodes"].items():
-    #             self.url_content[url] = node_data["content"]
-    #     else:
-    #         # Use content snippets as fallback if original kg.json not available
-    #         print("⚠️  Using content snippets as fallback (original kg.json not provided)")
-    #         for url, entity in self.entities.items():
-    #             self.url_content[url] = entity.content_snippet
-        
-    #     # Rebuild NetworkX graph
-    #     self._build_networkx_graph()
-        
-    #     print(f"✅ Enhanced knowledge graph loaded:")
-    #     print(f"   - Entities: {len(self.entities)}")
-    #     print(f"   - Relationships: {len(self.relationships)}")
-    #     print(f"   - Unique keywords: {len(self.keyword_index)}")
-    # def _determine_entity_type(self, url: str) -> str:
-    #     """Determine entity type based on URL structure"""
-    #     if "/core/" in url:
-    #         return "CORE_FEATURE"
-    #     elif "/advanced/" in url:
-    #         return "ADVANCED_FEATURE"
-    #     elif "/extraction/" in url:
-    #         return "EXTRACTION_STRATEGY"
-    #     elif "/api/" in url:
-    #         return "API_REFERENCE"
-    #     elif "/blog/" in url:
-    #         return "BLOG_POST"
-    #     elif "docker" in url.lower():
-    #         return "DEPLOYMENT"
-    #     elif "installation" in url.lower():
-    #         return "INSTALLATION"
-    #     else:
-    #         return "DOCUMENTATION_PAGE"
-    
     def _build_networkx_graph(self):
         """Build NetworkX graph from entities and relationships"""
         print("🕸️  Building NetworkX graph...")
@@ -293,7 +188,6 @@ class EnhancedGraphRAGSystem:
                 url,
                 keywords=node.keywords,
                 depth=node.depth,
-                score=node.score,
                 embedding=node.embedding
             )
         
@@ -309,19 +203,20 @@ class EnhancedGraphRAGSystem:
                     semantic_similarity=rel.semantic_similarity
                 )
                 
-                
-        
-       
     async def retrieve_and_generate(self, query: str, top_k: int = 5) -> str:
         """Enhanced query processing using both keywords and embeddings"""
         
-        print(f"Processing query: {query}")
+        # print(f"Processing query: {query}")
         
         # Step 1: Find relevant URLs using multiple methods
         relevant_urls = await self._find_relevant_urls(query, top_k)
         
+        # print(f" relevant urls : {relevant_urls}")
+        
         # Step 2: Expand context using graph relationships
         expanded_context = self._expand_context_with_graph(relevant_urls , top_k)
+        
+        # print(f" expandd context : {expanded_context} ")
         
         # Step 3: Retrieve and rank relevant content
         # relevant_content = self._retrieve_ranked_content(expanded_context, query)
@@ -349,10 +244,13 @@ class EnhancedGraphRAGSystem:
         query_embedding = self.embedding_model.encode(query)
         
         for url, entity in self.entities.items():
+            if entity.embedding is None : 
+                continue
             #print(f" {query_embedding == None} or {entity.embedding == None}")
             #print(f" shape : {query_embedding.shape} , {embedding.shape}")
             query_embedding= query_embedding.reshape(1 , -1)
-            entity.embedding = np.array(entity.embedding).reshape(1 , -1)
+            # print(f"\n\n {entity.embedding}\n\n")
+            entity.embedding = np.array(entity.embedding , dtype = np.float32).reshape(1 , -1)
             #print(f" {entity.embedding}")
             #print(f" shape : {entity.embedding.shape}")
             
@@ -365,16 +263,6 @@ class EnhancedGraphRAGSystem:
             )[0][0]
             similarity_scores[url] = similarity
     
-        # Method 3: Content-based fuzzy matching
-        # content_scores = defaultdict(float)
-        # for url, content in self.url_content.items():
-        #     content_lower = content.lower()
-        #     for word in query_words:
-        #         if word in content_lower:
-        #             # Count occurrences with diminishing returns
-        #             count = content_lower.count(word)
-        #             content_scores[url] += min(count * 0.1, 1.0)
-        
         # Combine scores
         combined_scores = {}
         all_urls = set(keyword_scores.keys()) | set(similarity_scores.keys())
@@ -433,40 +321,40 @@ class EnhancedGraphRAGSystem:
     async def _generate_enhanced_answer(self, query: str, context: Dict) -> str:
         """Generate enhanced answer using LLM with structured context"""
         
-        """# Prepare structured context
-        context_sections = []
+        # Prepare structured context
+        context_text = "\n**Documentation Context:**\n"
+        for entity in context.get('entities', []):
+            url = entity.source_urls[0] if entity.source_urls else "Unknown"
+            name = self._extract_entity_name(url)
+            context_text += f"**{name}**\n"
+            context_text += f"URL: {url}\n"
+            if entity.keywords:
+                context_text += f"Keywords: {', '.join(entity.keywords[:5])}\n"
+            content_snippet = entity.content_snippet[:1000] + "..." if len(entity.content_snippet) > 1000 else entity.content_snippet
+            context_text += f"Content: {content_snippet}\n\n"
         
-        # Add content from top relevant sources
-        for item in content_items[:5]:  # Top 5 most relevant
-            section = f"**{item['entity_name']} ({item['entity_type']})**\n"
-            section += f"Source: {item['url']}\n"
-            if item['keywords']:
-                section += f"Keywords: {', '.join(item['keywords'][:8])}\n"
-            section += "Content:\n"
-            for snippet in item['snippets']:
-                section += f"- {snippet}\n"
-            context_sections.append(section)
-        """
         # Add relationship information
         relationships_text = ""
-        if context['relationships']:
+        if context.get('relationships'):
             relationships_text = "\n**Related Concepts:**\n"
-
             for rel in context['relationships']:
                 source_name = self._extract_entity_name(rel['source'])
                 target_name = self._extract_entity_name(rel['target'])
                 relationships_text += f"- {source_name} → {target_name}"
-                if rel['common_keywords']:
+                if rel.get('common_keywords'):
                     relationships_text += f" (shared: {', '.join(rel['common_keywords'][:3])})"
                 relationships_text += "\n"
+                
+                
+        # print(f" \n\n\n context : {context_text} and relationships text : {relationships_text} and query : {query} \n\n\n")
         
         # Construct prompt
         prompt = f"""
-        Based on the following  documentation content, answer the user's question comprehensively and accurately.
+        Based on the following documentation context, answer the user's question comprehensively and accurately.
 
         Question: {query}
 
-
+        {context_text}
         {relationships_text}
 
         Instructions:
@@ -481,7 +369,7 @@ class EnhancedGraphRAGSystem:
         """
         
         try:
-            response = self.llm.send_message_stream(prompt)
+            response = self.llm.send_message(prompt)
             return response.text
         except Exception as e:
             return f"Error generating answer: {e}"
@@ -602,7 +490,7 @@ class EnhancedGraphRAGSystem:
     #         json.dump(enhanced_data, f, indent=2, ensure_ascii=False)
         
     #     print(f"💾 Enhanced knowledge graph saved to {filepath}")
-
+        
     #     # Stop further processing; the current workflow ends once the
     #     # enhanced knowledge graph is persisted.
     #     return

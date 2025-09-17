@@ -1,3 +1,4 @@
+import h5py
 import asyncio
 import numpy as np
 import os
@@ -23,7 +24,7 @@ import re
 from collections import Counter
 from pathlib import Path
 from typing import Set, Optional, List, Dict, Any , TypedDict
-
+import h5py
 from dataclasses import dataclass, field
 
 
@@ -33,7 +34,6 @@ class GraphNode:
     url: str
     content: str
     depth: int
-    score: float
     keywords : List[str]
     embedding : List[float]
     children: List['GraphNode'] = field(default_factory=list)
@@ -41,27 +41,28 @@ class GraphNode:
     def add_child(self, child_node: 'GraphNode') -> None:
         """Add a child GraphNode to this node"""
         self.children.append(child_node)
+        
+        
+
+class MetadataDict(TypedDict):
+    total_nodes: int
+    max_depth: int
+    root_url: str
     
 @dataclass        
 class Graph : 
     nodes: Dict[str, GraphNode] = field(default_factory=dict)
     edges: List['Edge'] = field(default_factory=list)
-    metadata : metadata = field(default_factory=dict)
+    metadata : MetadataDict = field(default_factory=dict)
 
         
         
 class Edge(TypedDict) : 
     source : str 
     target : str 
-    relation_type : str
     common_keywords : List[str]
     semantic_similarity : float
     
-class metadata(TypedDict):
-    total_nodes: int
-    max_depth: int
-    root_url: str
-
 
 top_k = 25
 
@@ -211,7 +212,7 @@ async def deep_crawl(doc_url: str, max_depth: Optional[int], max_pages: Optional
         for i , result in enumerate(results):
             depth = result.metadata.get("depth")
             parent_url = result.metadata.get("parent_url")
-            score = result.metadata.get("score", 0.0)  # Get URL relevance score, default to 0.0
+            #score = result.metadata.get("score", 0.0)  # Get URL relevance score, default to 0.0
             
             #skipping for 404 : 
             if(result.markdown is None ) : continue
@@ -225,25 +226,24 @@ async def deep_crawl(doc_url: str, max_depth: Optional[int], max_pages: Optional
 
             if result.url == doc_url : 
                 # keywords = extract_keywords_textrank(result.markdown, top_k)
-                root = GraphNode(url=doc_url, content=result.markdown, depth=0, score=score, keywords = keywords , embedding =model.encode(result.markdown) , children = [] )
+                root = GraphNode(url=doc_url, content=result.markdown, depth=0,  keywords = keywords , embedding =model.encode(result.markdown) , children = [] )
                 graph.nodes[doc_url] = root
                 continue
             
             try : 
                 
                 parent_node = graph.nodes[parent_url]
-                child_node = GraphNode(url=result.url, content=result.markdown, depth=depth, score=score , keywords = keywords , embedding = model.encode(result.markdown) ,  children = [] )
+                child_node = GraphNode(url=result.url, content=result.markdown, depth=depth, keywords = keywords , embedding = model.encode(result.markdown) ,  children = [] )
                 parent_node.add_child(child_node)
                 graph.nodes[result.url] = child_node
                 
                 common_keywords = get_common_keywords(parent_node.keywords , keywords)
-                semantic_similarity = len(common_keywords) / max(len(parent_node.keywords), len(keywords), 1)
+                semantic_similarity = len(common_keywords) / max(len(parent_node.keywords), len(keywords))
                 
                 
                 graph.edges.append({
                     'source' : parent_node.url , 
                     'target' : result.url , 
-                    'relation_type' : 'NAVIGATES_TO' , 
                     'common_keywords' : common_keywords , 
                     'semantic_similarity' : semantic_similarity
                 })
@@ -299,7 +299,7 @@ def print_graph_structure(root: GraphNode):
 
         print(f"{indent}📍 Node: {node.url[:60]}{'...' if len(node.url) > 60 else ''}")
         print(f"{indent}   ├─ Depth: {node.depth}")
-        print(f"{indent}   ├─ Score: {node.score:.3f}")
+        # print(f"{indent}   ├─ Score: {node.score:.3f}")
         print(f"{indent}   ├─ Content Length: {content_length:,} chars")
         print(f"{indent}   └─ Children: {children_count}")
 
@@ -312,7 +312,7 @@ def print_graph_structure(root: GraphNode):
 
     # ── Summary statistics ────────────────────────────────────────────────────
     depths = [n.depth for n in all_nodes]
-    scores = [n.score for n in all_nodes]
+    # scores = [n.score for n in all_nodes]
     children_counts = [len(n.children) for n in all_nodes]
 
     print("=" * 80)
@@ -328,12 +328,12 @@ def print_graph_structure(root: GraphNode):
         print(f"   Depth {d}: {depth_counts[d]} nodes")
 
     # Score statistics
-    if scores:
-        avg_score = sum(scores) / len(scores)
-        print(f"\n📊 Score Statistics:")
-        print(f"   Average Score: {avg_score:.3f}")
-        print(f"   Max Score: {max(scores):.3f}")
-        print(f"   Min Score: {min(scores):.3f}")
+    # if scores:
+    #     avg_score = sum(scores) / len(scores)
+    #     print(f"\n📊 Score Statistics:")
+    #     print(f"   Average Score: {avg_score:.3f}")
+    #     print(f"   Max Score: {max(scores):.3f}")
+    #     print(f"   Min Score: {min(scores):.3f}")
 
     # Connectivity stats
     print(f"\n📊 Connectivity:")
@@ -354,104 +354,124 @@ def clean_embedding(embedding):
         return None
     if isinstance(embedding, np.ndarray):
         embedding = embedding.tolist()
-    return [x if isinstance(x, (int, float)) and not (math.isnan(x) or math.isinf(x)) else None for x in embedding]
-                    
-
-
-def save_graph(graph: GraphNode, filepath: str):
-    """Save the knowledge graph to disk with streamlined structure"""
     
-    # Collect all nodes from the graph tree
-    all_nodes: List[GraphNode] = []
-    stack: List[GraphNode] = [graph]
-    while stack:
-        node = stack.pop()
-        all_nodes.append(node)
-        stack.extend(node.children)
+    # Replace None values with 0.0 instead of keeping them as None
+    # JSON with allow_nan=False cannot serialize None values in numeric arrays
+    return [x if isinstance(x, (int, float)) and not (math.isnan(x) or math.isinf(x)) else 0.0 for x in embedding]
 
-    # Sort by depth for nicer visual ordering
-    all_nodes.sort(key=lambda n: n.depth)
+import numpy as np
+
+def save_graph_hdf5(graph : Graph, filepath: str):
+    """
+    Save the graph structure to HDF5 format for efficient storage and retrieval.
+    
+    HDF5 (Hierarchical Data Format 5) is a binary format that provides:
+    - Efficient storage of large datasets
+    - Hierarchical organization (groups and datasets)
+    - Metadata storage via attributes
+    - Cross-platform compatibility
+    
+    Structure created:
+    /metadata/          (group with attributes: total_nodes, max_depth, root_url)
+    /nodes/             (group)
+        /<url1>/        (group for each node, named by URL)
+            content     (attribute: string)
+            depth       (attribute: integer)
+            embedding   (dataset: float array, optional)
+            keywords    (dataset: string array)
+        /<url2>/
+            ...
+    /edges              (structured dataset with columns: source, target, sim, common_keywords)
+    """
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+    # Collect all nodes from the graph tree (DFS)
+    all_nodes = list(graph.nodes.values())
+
     
     print(f"🔍 Extracting keywords for {len(all_nodes)} nodes...")
     
-    # Extract keywords for all nodes
-    node_keywords = {}
-    for node in all_nodes:
-    #    print(f"  📝 Processing keywords for: {node.url[:50]}...")
-        keywords = extract_keywords_textrank(node.content, top_k)
-        node_keywords[node.url] = keywords
-    
-    # Convert GraphNode objects to serializable format
-    serializable_graph = {
-        "nodes": {},
-        "edges": [],
-        "metadata": {
-            "total_nodes": len(all_nodes),
-            "max_depth": max(node.depth for node in all_nodes) if all_nodes else 0,
-            "root_url": graph.url,
-            
-        }
+    # Prepare metadata
+    metadata = {
+        "total_nodes":  graph.metadata['total_nodes'], 
+        "max_depth": graph.metadata['max_depth'] , 
+        "root_url": graph.metadata['root_url'],
     }
     
-    # Create a mapping of URL to GraphNode for easier access
-    node_map = {node.url: node for node in all_nodes}
+    dt_str = h5py.string_dtype('utf-8')
     
-    # Process nodes
-    for node in all_nodes:
-        serializable_graph["nodes"][node.url] = {
-            "source_url": node.url,
-            "content": node.content,
-            "embedding": clean_embedding(node.embedding),
-            "depth": node.depth,
-            "score": node.score,
-            "keywords": node_keywords.get(node.url, [])
-        }
-        
-        # Process edges (relationships)
-        for child in node.children:
-            # weight = calculate_link_weight(node.url, child.url, node_map, max_depth)
+    try : 
+        with h5py.File(filepath, "w") as f:
+            # Store metadata as attributes
+            meta_grp = f.create_group("metadata")
+            for k, v in metadata.items():
+                meta_grp.attrs[k] = v
+
+            # Store nodes
+            nodes_grp = f.create_group("nodes")
+            for node in all_nodes:
+                try : 
+                    node_grp = nodes_grp.create_group(node.url)
+                except ValueError : 
+                    print(f" value error  , name alr exists")
+                    continue
+                    
+                dt = h5py.string_dtype('utf-8')  # Variable-length UTF-8
+                node_grp.attrs["depth"] = node.depth
+                
+                
+                embedding = clean_embedding(node.embedding)
+                if embedding is not None:
+                    node_grp.create_dataset("embedding", data=np.array(embedding))
+                keywords = node.keywords  # Correct: keywords is already a list
+                if keywords:
+                    node_grp.create_dataset("keywords", data=keywords , dtype = dt_str)
             
-            # Calculate common keywords between parent and child
-            parent_keywords = node_keywords.get(node.url, [])
-            child_keywords = node_keywords.get(child.url, [])
-            common_keywords = get_common_keywords(parent_keywords, child_keywords)
+            # making my own datatype for saving edges- 
             
-            # if weight is not None:  # Only add edges with valid weights
-            serializable_graph["edges"].append({
-                "source": node.url,
-                "target": child.url,
-                "relation_type": "NAVIGATES_TO",
-                "common_keywords": common_keywords,
-                "semantic_similarity": len(common_keywords) / max(len(parent_keywords), len(child_keywords), 1)
-            })
-    
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(serializable_graph, f, indent=2, ensure_ascii=False , allow_nan = False)
-    
-    print(f"💾 Knowledge graph saved to {filepath}")
-    print(f"📊 Added keywords to {len(all_nodes)} nodes and {len(serializable_graph['edges'])} edges")
+            
+            edge_dtype = np.dtype([
+                ('source' , dt_str), 
+                ('target' , dt_str) ,
+                ('semantic_similarity' , np.float64) ,
+                ('common_keywords' , dt_str),
+            ])
+            # print(float(e['semantic_similarity'])
+            
+            edge_row = [
+                (
+                    e['source'] , 
+                    e['target'] ,
+                    float(e['semantic_similarity']) , 
+                    ",".join(e['common_keywords'])
+                )
+                for e in graph.edges
+            ]
+            
+            edge_arr = np.array(edge_row , dtype = edge_dtype)
+
+            if len(edge_arr) :
+                print(f" len edges data = {len(edge_arr)}")
+                # Create structured array (like a database table)
+                f.create_dataset(
+                    "edges",
+                    data = edge_arr
+                )
+                
+    except Exception as e: 
+        print("oops error uWu" , e)
+        # Remove the partially created file if an error occurred
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        exit(1)
+
+    print(f"💾 Knowledge graph  to {filepath} (HDF5)")
 
 async def main(url: str, max_depth: Optional[int], max_pages: Optional[int]) -> Graph:
-    print("======= running deep crwal ===============" ) 
-
-    # final_md = []
-    
-    # print(f"output path : {OUTPUT_DIR}")
-
+    print("======= running deep crwal ===============" )
     graph  = await deep_crawl(url, max_depth, max_pages)
-    
     return graph
     
-    # save_graph(graph , "kg.json")
-    
-    # OUTPUT_PATH = os.path.join(OUTPUT_DIR , "kg.json")
-    # save_graph(graph, OUTPUT_PATH)
-
-    # print("done")
-
-    
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description = "pass multiple varirables")
     parser.add_argument("--max_depth"  , type = int  , help = "maximum depth of pages")
