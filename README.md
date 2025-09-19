@@ -124,3 +124,34 @@ Key technical aspects:
 
 ### Basic Crawl and Query
 Crawl and start interactive Q&A:
+
+```
+uv run python main.py \
+  --url https://docs.crawl4ai.com/ \
+  --max_depth 3 \
+  --max_pages 50 \
+  --output_dir ./output \
+  --name crawl4ai_docs
+```
+
+- The first run crawls the site, builds the graph, and saves `./output/crawl4ai_docs_kg.h5`.
+- Subsequent runs will load the existing HDF5 instead of crawling again.
+
+### Re-run using existing graph (skip crawling)
+If the HDF5 file already exists, the app loads it directly:
+
+```
+uv run python main.py \
+  --url https://docs.crawl4ai.com/ \
+  --output_dir ./output \
+  --name crawl4ai_docs
+```
+
+### Running tests
+```
+uv run python test_graphrag.py
+```
+
+### Notes
+- Ensure `.venv` is activated or always prefix with `uv run`.
+- Confirm `gemini_api_key` is set in `.env` before running.
