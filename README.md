@@ -87,25 +87,37 @@ Key technical aspects:
 
 ### Prerequisites
 - Python 3.8+
+- uv (fast Python package manager and environment tool)
 - Google Gemini API key (from https://makersuite.google.com/app/apikey)
 
-### Steps
+### Steps (using uv)
 1. Clone the repository:
    ```
    git clone https://github.com/your-org/docbook.git
    cd docbook
    ```
 
-2. Install dependencies:
+2. Install uv (if not already installed):
    ```
-   pip install -r requirements.txt
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+3. Create and activate a virtual environment:
+   ```
+   uv venv .venv
+   . .venv/bin/activate
+   ```
+
+4. Install dependencies with uv:
+   ```
+   uv pip install -r requirements.txt
    ```
    - Key deps: crawl4ai[all], sentence-transformers, networkx, scikit-learn, summa, spacy, google-genai, h5py, etc.
-   - Install spaCy model: `python -m spacy download en_core_web_sm`
+   - Install spaCy model: `uv run python -m spacy download en_core_web_sm`
 
-3. Set environment variables in `.env`:
+5. Set environment variables in `.env`:
    ```
-   GEMINI_API_KEY=your_api_key_here
+   gemini_api_key=your_api_key_here
    ```
 
 ## Usage
