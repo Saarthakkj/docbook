@@ -23,8 +23,6 @@ Key technical aspects:
 - **Knowledge Graph**: Directed graph with NAVIGATES_TO relationships, including common keywords and semantic similarity scores.
 - **Multi-Method Retrieval**: Combines keyword indexing, semantic similarity, and graph expansion for relevant context.
 - **Interactive Q&A**: Command-line interface for querying with 'quit' to exit.
-- **Testing**: Dedicated test script with sample queries.
-- **Logging**: Timestamped logging utility.
 
 ## Architecture and Technical Details
 
@@ -57,14 +55,6 @@ Key technical aspects:
    - Checks for existing {name}_kg.h5; if not, runs deepcrawl and saves.
    - Initializes EnhancedGraphRAGSystem from graph.
    - Enters interactive loop: Prompts for questions, uses retrieve_and_generate, exits on 'quit'.
-
-4. **time_logger.py** (28 lines):
-   - Sets up logging with ISO-8601 timestamps, INFO level, stdout handler.
-   - Reuses logger instance to avoid multiple handlers.
-
-5. **test_graphrag.py** (65 lines):
-   - Tests GraphRAG with sample queries (e.g., "How do I install Crawl4AI?").
-   - Initializes from kg.h5, runs queries asynchronously with 1s delay.
 
 ### How It Works (Step-by-Step)
 
@@ -124,34 +114,3 @@ Key technical aspects:
 
 ### Basic Crawl and Query
 Crawl and start interactive Q&A:
-
-```
-uv run python main.py \
-  --url https://docs.crawl4ai.com/ \
-  --max_depth 3 \
-  --max_pages 50 \
-  --output_dir ./output \
-  --name crawl4ai_docs
-```
-
-- The first run crawls the site, builds the graph, and saves `./output/crawl4ai_docs_kg.h5`.
-- Subsequent runs will load the existing HDF5 instead of crawling again.
-
-### Re-run using existing graph (skip crawling)
-If the HDF5 file already exists, the app loads it directly:
-
-```
-uv run python main.py \
-  --url https://docs.crawl4ai.com/ \
-  --output_dir ./output \
-  --name crawl4ai_docs
-```
-
-### Running tests
-```
-uv run python test_graphrag.py
-```
-
-### Notes
-- Ensure `.venv` is activated or always prefix with `uv run`.
-- Confirm `gemini_api_key` is set in `.env` before running.
