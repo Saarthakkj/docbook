@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Set, Optional, List, Dict, Any , TypedDict
 import h5py
 from dataclasses import dataclass, field
+import hashlib
 
 
 @dataclass
@@ -371,21 +372,23 @@ def save_graph_hdf5(graph : Graph, filepath: str):
     - Metadata storage via attributes
     - Cross-platform compatibility
     
-    Structure created:
-    /metadata/          (group with attributes: total_nodes, max_depth, root_url)
-    /nodes/             (group)
-        /<url1>/        (group for each node, named by URL)
-            content     (attribute: string)
-            depth       (attribute: integer)
-            embedding   (dataset: float array, optional)
-            keywords    (dataset: string array)
-        /<url2>/
-            ...
-    /edges              (structured dataset with columns: source, target, sim, common_keywords)
+    Actual layout written by this function (slashes in URLs are NOT used as group names):
+    /metadata                  (group with attributes: total_nodes, max_depth, root_url)
+    /nodes                     (group)
+        /n_<id>                (group per node; <id> is a stable hash of URL)
+            attrs:
+                url            (original URL, string)
+                depth          (integer)
+                content        (string; may be large)
+            datasets:
+                embedding      (1D float array, optional)
+                keywords       (1D variable-length UTF-8 string array)
+    /nodes_index               (structured dataset: columns id, url, depth)
+    /edges                     (structured dataset: columns source_id, target_id, semantic_similarity, common_keywords)
     """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-    # Collect all nodes from the graph tree (DFS)
+    # Collect all nodes
     all_nodes = list(graph.nodes.values())
 
     
@@ -409,44 +412,77 @@ def save_graph_hdf5(graph : Graph, filepath: str):
 
             # Store nodes
             nodes_grp = f.create_group("nodes")
+            
+            # Precompute safe, stable IDs for each node (avoid '/' in group names)
+            url_to_id: Dict[str, str] = {}
+            for node in all_nodes:
+                node_id = hashlib.md5(node.url.encode('utf-8')).hexdigest()[:16]
+                url_to_id[node.url] = node_id
+
             for node in all_nodes:
                 try : 
-                    node_grp = nodes_grp.create_group(node.url)
+                    node_id = url_to_id[node.url]
+                    node_grp = nodes_grp.create_group(f"n_{node_id}")
                 except ValueError : 
                     print(f" value error  , name alr exists")
                     continue
                     
                 dt = h5py.string_dtype('utf-8')  # Variable-length UTF-8
                 node_grp.attrs["depth"] = node.depth
+                node_grp.attrs["url"] = node.url
                 
                 
                 embedding = clean_embedding(node.embedding)
+                content = node.content
                 if embedding is not None:
                     node_grp.create_dataset("embedding", data=np.array(embedding))
-                keywords = node.keywords  # Correct: keywords is already a list
+                keywords = node.keywords
                 if keywords:
-                    node_grp.create_dataset("keywords", data=keywords , dtype = dt_str)
+                    node_grp.create_dataset("keywords", data=node.keywords , dtype = dt_str)
+                if content : 
+                    node_grp.create_dataset("content", data=node.content, dtype=dt_str)
+            
+            # Create a compact index for nodes (id -> url, depth)
+            node_index_dtype = np.dtype([
+                ('id', dt_str),
+                ('url', dt_str),
+                ('depth', np.int32),
+            ])
+            node_index_rows = [
+                (url_to_id[node.url], node.url, int(node.depth))
+                for node in all_nodes
+            ]
+            if len(node_index_rows):
+                f.create_dataset(
+                    "nodes_index",
+                    data=np.array(node_index_rows, dtype=node_index_dtype)
+                )
             
             # making my own datatype for saving edges- 
             
             
             edge_dtype = np.dtype([
-                ('source' , dt_str), 
-                ('target' , dt_str) ,
+                ('source_id' , dt_str), 
+                ('target_id' , dt_str) ,
                 ('semantic_similarity' , np.float64) ,
                 ('common_keywords' , dt_str),
             ])
             # print(float(e['semantic_similarity'])
             
-            edge_row = [
-                (
-                    e['source'] , 
-                    e['target'] ,
-                    float(e['semantic_similarity']) , 
+            edge_row = []
+            for e in graph.edges:
+                try:
+                    sid = url_to_id[e['source']]
+                    tid = url_to_id[e['target']]
+                except KeyError:
+                    # In case an edge references a node that wasn't saved (shouldn't happen)
+                    continue
+                edge_row.append((
+                    sid,
+                    tid,
+                    float(e['semantic_similarity']),
                     ",".join(e['common_keywords'])
-                )
-                for e in graph.edges
-            ]
+                ))
             
             edge_arr = np.array(edge_row , dtype = edge_dtype)
 

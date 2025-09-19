@@ -223,62 +223,105 @@ def load_graph_hdf5(filepath: str) -> Graph:
         if not root_url:
             raise ValueError("No root_url found in metadata")
 
-        # Load nodes into a dict (url -> GraphNode)
+        # Build an ID -> URL map and load nodes (url -> GraphNode)
+        id_to_url = {}
+        if "nodes_index" in f:
+            # Preferred path: use the explicit index
+            idx = f["nodes_index"][:]
+            for row in idx:
+                rid = row["id"].decode("utf-8") if isinstance(row["id"], (bytes, bytearray)) else str(row["id"])
+                rurl = row["url"].decode("utf-8") if isinstance(row["url"], (bytes, bytearray)) else str(row["url"]) 
+                id_to_url[rid] = rurl
+        
         node_map = {}
-        if "nodes" in f:
-            nodes_grp = f["nodes"]
-            for url in nodes_grp:
-                node_grp = nodes_grp[url]
-                
-                # Reconstruct GraphNode (adjust init params to match your class)
-                node = GraphNode(
-                    url=url,
-                    content=node_grp.attrs.get("content", ""),
-                    embedding=None,  # Set below
-                    depth=node_grp.attrs.get("depth", 0),
-                    keywords=node_grp.attrs.get("keywords" , [])
-                )
-                
-                # Embedding
-                # if "embedding" in node_grp:
-                #     node.embedding = node_grp["embedding"][:].tolist()
-                
-                # # Keywords (add as attribute)
-                # if "keywords" in node_grp:
-                #     keywords_array = node_grp["keywords"][:]
-                #     node.keywords = [kw.decode("utf-8") for kw in keywords_array]  # Decode to list[str]
-                
-                node_map[url] = node
-        else:
+        if "nodes" not in f:
             raise ValueError("No nodes found in HDF5 file.")
+        nodes_grp = f["nodes"]
+        for node_group_name in nodes_grp:
+            node_grp = nodes_grp[node_group_name]
+            # Recover URL and depth
+            raw_url = node_grp.attrs.get("url", "")
+            url = raw_url.decode("utf-8") if isinstance(raw_url, (bytes, bytearray)) else str(raw_url)
+            raw_depth = node_grp.attrs.get("depth", 0)
+            depth = int(raw_depth)
+            
+            # Datasets: content, keywords, embedding
+            content = ""
+            if "content" in node_grp:
+                raw_content = node_grp["content"][()]
+                content = raw_content.decode("utf-8") if isinstance(raw_content, (bytes, bytearray)) else str(raw_content)
+            
+            keywords = []
+            if "keywords" in node_grp:
+                kw_arr = node_grp["keywords"][:]
+                for kw in kw_arr:
+                    if isinstance(kw, (bytes, bytearray)):
+                        kw = kw.decode("utf-8", errors="ignore")
+                    kw = str(kw)
+                    if kw:
+                        keywords.append(kw)
+            
+            embedding = None
+            if "embedding" in node_grp:
+                emb = node_grp["embedding"][:]
+                try:
+                    embedding = emb.astype(float).tolist()
+                except Exception:
+                    embedding = [float(x) for x in emb]
+            
+            node = GraphNode(
+                url=url,
+                content=content,
+                depth=depth,
+                keywords=keywords,
+                embedding=embedding,
+            )
+            node_map[url] = node
 
         # Load and apply edges to link children
         graph = Graph(nodes=node_map, edges=[], metadata=metadata)
         if "edges" in f:
             edges_dataset = f["edges"][:]
             for edge in edges_dataset:
-                source = edge["source"].decode("utf-8")
-                target = edge["target"].decode("utf-8")
-                rel_type = edge["type"].decode("utf-8")
-                sim = edge["sim"]
-                common_kw_str = edge["common_keywords"].decode("utf-8")
+                # Resolve IDs back to URLs
+                raw_sid = edge["source_id"]
+                raw_tid = edge["target_id"]
+                sid = raw_sid.decode("utf-8") if isinstance(raw_sid, (bytes, bytearray)) else str(raw_sid)
+                tid = raw_tid.decode("utf-8") if isinstance(raw_tid, (bytes, bytearray)) else str(raw_tid)
+                source_url = id_to_url.get(sid, None)
+                target_url = id_to_url.get(tid, None)
+                if source_url is None or target_url is None:
+                    # Fallback: try to find URLs by scanning node groups' attrs if index is missing
+                    if not id_to_url:
+                        # Attempt to rebuild id_to_url from group names (n_<id>) and attrs
+                        for ngn in nodes_grp:
+                            ngr = nodes_grp[ngn]
+                            rid = ngn[2:] if ngn.startswith("n_") else ngn
+                            rurl = ngr.attrs.get("url", "")
+                            rurl = rurl.decode("utf-8") if isinstance(rurl, (bytes, bytearray)) else str(rurl)
+                            id_to_url[rid] = rurl
+                        source_url = id_to_url.get(sid)
+                        target_url = id_to_url.get(tid)
+                sim = float(edge["semantic_similarity"]) if "semantic_similarity" in edge.dtype.names else 0.0
+                raw_ckw = edge["common_keywords"] if "common_keywords" in edge.dtype.names else b""
+                if isinstance(raw_ckw, (bytes, bytearray)):
+                    common_kw_str = raw_ckw.decode("utf-8", errors="ignore")
+                else:
+                    common_kw_str = str(raw_ckw)
                 common_kw = common_kw_str.split(',') if common_kw_str else []
 
-                # Link children (as before)
-                if source in node_map and target in node_map:
-                    node_map[source].children.append(node_map[target])
+                if source_url in node_map and target_url in node_map:
+                    node_map[source_url].children.append(node_map[target_url])
 
-                # Add full Edge to graph.edges
                 graph.edges.append({
-                    'source': source,
-                    'target': target,
-                    # 'relation_type': rel_type,
+                    'source': source_url if source_url is not None else '',
+                    'target': target_url if target_url is not None else '',
                     'common_keywords': common_kw,
                     'semantic_similarity': sim
                 })
         return graph
             
-    #     # Return the root node
+    # Return the root node
     # root = node_map.get(root_url)
     # if not root:
     #     raise ValueError(f"Root node {root_url} not found in loaded nodes")
@@ -288,18 +331,31 @@ def load_graph_hdf5(filepath: str) -> Graph:
     # )
     # return root
 
-# Quick function to check if your graph is actually populated
-def quick_graph_check(graph):
-    """Quick check of graph content"""
-    stack = [graph]
-    nodes = []
-    while stack:
-        node = stack.pop()
-        nodes.append(node)
-        stack.extend(node.children)
+def print_graph_nodes_sample(graph: Graph, limit: int = 10):
+    """Print a small sample of nodes to verify that the loaded graph is not empty."""
+    try:
+        total_nodes = len(graph.nodes) if hasattr(graph, 'nodes') and graph.nodes is not None else 0
+        total_edges = len(graph.edges) if hasattr(graph, 'edges') and graph.edges is not None else 0
+    except Exception:
+        total_nodes = 0
+        total_edges = 0
     
-    print(f"Quick check: {len(nodes)} nodes, depths: {[n.depth for n in nodes[:10]]}")
-    return len(nodes) > 1  # More than just root
+    if total_nodes == 0:
+        print("⚠️  Graph appears to have no nodes.")
+        return
+    
+    print(f"🌐 Total nodes: {total_nodes}")
+    print(f"🔗 Total edges: {total_edges}")
+    sample_urls = list(graph.nodes.keys())[:limit]
+    print(f"🔎 Sample of {len(sample_urls)} node URLs: {sample_urls}")
+    for url in sample_urls:
+        node = graph.nodes[url]
+        depth = getattr(node, 'depth', None)
+        kw_count = len((getattr(node, 'keywords', []) or []))
+        content_len = len((getattr(node, 'content', '') or ''))
+        print(f"  - {url} (depth={depth}, keywords={kw_count}, content_len={content_len})")
+
+
 async def main():
     """Main function to demonstrate GraphRAG implementation"""
     
@@ -332,12 +388,14 @@ async def main():
     if os.path.exists(kg_path):
         print(f"Found existing knowledge graph at {kg_path}")
         graph = load_graph_hdf5(kg_path)
+        # print_graph_nodes_sample(graph, limit=5)
     else:
         print(f"No existing graph found, running deepcrawl...")
         graph = await run_deepcrawl(args.url, args.max_depth, args.max_pages)
         # root = graph.nodes[args.url]
         save_graph_hdf5(graph, kg_path)
         print(f"Knowledge graph saved to {kg_path}")
+        # print_graph_nodes_sample(graph, limit=5)
 
     rag_system = await create_graphrag_from_kg_json(
         graph,

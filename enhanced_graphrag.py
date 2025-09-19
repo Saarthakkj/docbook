@@ -88,6 +88,19 @@ class EnhancedGraphRAGSystem:
         # )
         # self.llm = genai.GenerativeModel('gemini-2.5-flash')
         
+    def _normalize_keyword(self, kw) -> str:
+        """Convert keyword-like values (bytes, numpy scalars) to normalized lowercase str."""
+        try:
+            import numpy as _np  # local import to avoid top-level alias issues
+            if isinstance(kw, (_np.bytes_, bytes)):
+                kw = kw.decode('utf-8', errors='ignore')
+        except Exception:
+            # If numpy is not available or decode fails, fall back to str
+            pass
+        if isinstance(kw, bytes):
+            kw = kw.decode('utf-8', errors='ignore')
+        return str(kw).strip().lower()
+
     def load_from_kg_json(self):
         """ load knoweldge graph directly from graphNode"""
         
@@ -95,19 +108,30 @@ class EnhancedGraphRAGSystem:
         print("🔍 Loading knowledge graph from graphNode...")
         
         
+        # Normalize keywords and build keyword index
         for url, node in self.graph.nodes.items():
-            for kw in node.keywords:
-                self.keyword_index[kw.lower()].append(node.url)
-    
-        self._build_networkx_graph()
-        nodes_list = []
-        for _  in self.graph.nodes  : 
-            nodes_list.append(self.graph.nodes[_])
+            normalized_keywords = []
+            try:
+                iterable_keywords = node.keywords or []
+            except Exception:
+                iterable_keywords = []
+            for kw in iterable_keywords:
+                if kw is None:
+                    continue
+                norm_kw = self._normalize_keyword(kw)
+                if not norm_kw:
+                    continue
+                normalized_keywords.append(norm_kw)
+                self.keyword_index[norm_kw].append(node.url)
+            node.keywords = normalized_keywords
 
-#        print(f" nodes_list : {nodes_list[0]}")
-#        print(f"\n type of graph nodes : {type(nodes_list)}\n\n")
+        # Create entities and relationships before building the NetworkX graph
+        nodes_list = [self.graph.nodes[_] for _ in self.graph.nodes]
         self._create_entities_from_nodes(nodes_list)
         self._create_relationships_from_edges(self.graph.edges)
+
+        # Now build the NetworkX graph with nodes and edges available
+        self._build_networkx_graph()
                        
         # """Load knowledge graph directly from kg.json format"""
         # print("📥 Loading knowledge graph from kg.json format...")
@@ -242,13 +266,14 @@ class EnhancedGraphRAGSystem:
         similarity_scores = {}
         # if any(entity.embedding is not None for entity in self.entities.values()):
         query_embedding = self.embedding_model.encode(query)
+        if isinstance(query_embedding, np.ndarray):
+            query_embedding = query_embedding.reshape(1, -1)
         
         for url, entity in self.entities.items():
             if entity.embedding is None : 
                 continue
             #print(f" {query_embedding == None} or {entity.embedding == None}")
             #print(f" shape : {query_embedding.shape} , {embedding.shape}")
-            query_embedding= query_embedding.reshape(1 , -1)
             # print(f"\n\n {entity.embedding}\n\n")
             entity.embedding = np.array(entity.embedding , dtype = np.float32).reshape(1 , -1)
             #print(f" {entity.embedding}")
@@ -276,7 +301,17 @@ class EnhancedGraphRAGSystem:
         
         # Sort and return top k
         sorted_urls = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
-        return [url for url, _ in sorted_urls[:top_k]]
+        top_urls = [url for url, _ in sorted_urls[:top_k]]
+
+        # Fallback: if nothing scored (e.g., no embeddings and no keyword matches), return first k nodes
+        if not top_urls:
+            try:
+                return list(self.graph.nodes.keys())[:top_k]
+            except Exception:
+                return []
+            
+            
+        return top_urls
     
     def _expand_context_with_graph(self, seed_urls: List[str] , k : int) -> Dict:
         """Expand context using graph relationships and high-value neighbors"""
