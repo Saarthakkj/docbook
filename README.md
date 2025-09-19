@@ -11,9 +11,9 @@ DocBook is designed to create an intelligent assistant for any documentation web
 
 Key technical aspects:
 - **Crawling**: Uses Crawl4AI for asynchronous, depth-limited crawling with content extraction.
-- **Graph Construction**: Builds a hierarchical graph with nodes representing pages, including metadata like depth, score, keywords (extracted via TextRank), and embeddings (using Sentence Transformers).
+- **Graph Construction**: Builds a hierarchical graph with nodes representing pages, including metadata like depth, keywords (extracted via TextRank), and embeddings (using Sentence Transformers).
 - **RAG System**: Combines keyword matching, semantic similarity (cosine similarity on embeddings), and graph traversal for context retrieval, followed by generation using Gemini API.
-- **Persistence**: Saves knowledge graphs as HDF5 for reuse, avoiding repeated crawls.
+- **Persistence**: Saves knowledge graphs as HDF5 for efficient storage and reuse, avoiding repeated crawls.
 
 ## Features
 
@@ -23,62 +23,76 @@ Key technical aspects:
 - **Knowledge Graph**: Directed graph with NAVIGATES_TO relationships, including common keywords and semantic similarity scores.
 - **Multi-Method Retrieval**: Combines keyword indexing, semantic similarity, and graph expansion for relevant context.
 - **Interactive Q&A**: Command-line interface for querying with 'quit' to exit.
+- **HDF5 Storage**: Efficient binary format for storing large graphs with metadata, embeddings, and hierarchical structure.
 
 ## Architecture and Technical Details
 
 ### Core Components
 
-1. **deepcrawl.py** (457 lines):
-   - Implements BFS deep crawling using Crawl4AI's AsyncWebCrawler.
-   - Configurable via CLI args: --url, --max_depth, --max_pages, --output_dir, --name.
-   - Builds a Graph dataclass with GraphNode objects (url, content, depth, keywords, embedding, children).
-   - Extracts keywords using TextRank or fallback frequency analysis (ignores stop words, min word length 3).
-   - Creates embeddings with SentenceTransformer.
-   - Constructs edges with common keywords and semantic similarity (ratio of common keywords).
-   - Saves graph to HDF5 format in output_dir with metadata (total_nodes, max_depth, root_url).
-   - Includes print_graph_structure for visualizing the graph with stats (depth distribution, connectivity).
+1. **deepcrawl.py**:
+   - **GraphNode dataclass**: Represents nodes with url, content, depth, keywords, embedding, and children list.
+   - **Graph dataclass**: Contains nodes dict, edges list, and metadata dict with total_nodes, max_depth, root_url.
+   - **Deep crawling**: Uses BFS strategy with AsyncWebCrawler, configurable depth/page limits.
+   - **Keyword extraction**: Primary method uses TextRank via `extract_keywords_textrank()`, fallback to frequency-based analysis.
+   - **Embeddings**: Creates embeddings using SentenceTransformer('all-MiniLM-L6-v2').
+   - **Edge computation**: Calculates semantic similarity as ratio of common keywords between parent-child nodes.
+   - **HDF5 persistence**: `save_graph_hdf5()` stores graph in hierarchical format with metadata, nodes (with embeddings/keywords), and edges.
+   - **Graph utilities**: `print_graph_structure()` for visualization, `find_parent_node()` for tree traversal.
 
-2. **enhanced_graphrag.py** (631 lines):
-   - Defines EnhancedEntity and EnhancedRelationship dataclasses.
-   - EnhancedGraphRAGSystem class:
-     - Initializes with graph, Gemini API key; loads SentenceTransformer and Gemini model.
-     - Builds NetworkX DiGraph from entities/relationships.
-     - Keyword index: defaultdict of keyword to list of URLs.
-     - load_from_kg_json: Creates entities from nodes, relationships from edges, builds graph.
-     - retrieve_and_generate: Finds relevant URLs (keyword + semantic scores), expands with graph neighbors, generates answer via LLM.
-     - _find_relevant_urls: Combines keyword scores (overlap count), cosine similarity on embeddings.
-     - _expand_context_with_graph: Adds top 2 neighbors per seed URL, collects important relationships.
-     - _generate_enhanced_answer: Constructs detailed prompt with context sections, relationships, and instructions for LLM.
+2. **enhanced_graphrag.py**:
+   - **EnhancedEntity**: Dataclass with source_urls, keywords, content_snippet, embedding, depth, score.
+   - **EnhancedRelationship**: Dataclass with source, target, source_urls, common_keywords, semantic_similarity.
+   - **EnhancedGraphRAGSystem**: Main RAG class with:
+     - Initialization with Graph object and Gemini API key
+     - SentenceTransformer model loading for embeddings
+     - NetworkX DiGraph construction for graph operations
+     - Keyword index (defaultdict) mapping keywords to URL lists
+     - `load_from_kg_json()`: Creates entities from GraphNodes, relationships from edges
+     - `retrieve_and_generate()`: Main query method combining retrieval and generation
+     - `_find_relevant_urls()`: Multi-score ranking (keyword overlap + cosine similarity)
+     - `_expand_context_with_graph()`: Graph traversal to add neighbor nodes (top 2 per seed)
+     - `_generate_enhanced_answer()`: Constructs detailed prompt with context sections for LLM
 
-3. **main.py** (256 lines):
-   - Parses CLI args: --url (required), --max_depth, --max_pages, --output_dir (required), --name (required).
-   - Checks for existing {name}_kg.h5; if not, runs deepcrawl and saves.
-   - Initializes EnhancedGraphRAGSystem from graph.
-   - Enters interactive loop: Prompts for questions, uses retrieve_and_generate, exits on 'quit'.
+3. **main.py**:
+   - **CLI argument parsing**: Required args (--url, --output_dir, --name), optional (--max_depth, --max_pages).
+   - **Graph persistence check**: Looks for existing `{name}_kg.h5` file to avoid re-crawling.
+   - **Crawling workflow**: If no existing graph, runs `deepcrawl.deep_crawl()` and saves with `save_graph_hdf5()`.
+   - **Graph loading**: Uses `load_graph_hdf5()` to reconstruct Graph object from HDF5.
+   - **RAG initialization**: Creates EnhancedGraphRAGSystem from loaded graph.
+   - **Interactive loop**: Continuous Q&A interface with error handling and 'quit' command.
+   - **Debug utilities**: `debug_save_process()` and `inspect_saved_graph()` for troubleshooting.
 
 ### How It Works (Step-by-Step)
 
-1. **Crawling (deepcrawl.py)**:
-   - Starts BFS from root URL, limits by depth/pages.
-   - Extracts markdown content, skips invalid pages.
-   - Builds tree structure, extracts keywords/embeddings.
-   - Computes edges with similarities.
+1. **Crawling Phase**:
+   - BFS traversal starting from root URL with depth/page limits
+   - Content extraction to markdown, keyword extraction via TextRank
+   - Embedding generation for each page's content
+   - Parent-child relationship establishment with similarity scoring
 
-2. **Graph Loading (enhanced_graphrag.py)**:
-   - Loads nodes as entities, edges as relationships.
-   - Builds keyword index and NetworkX graph.
+2. **Graph Construction**:
+   - Nodes stored as GraphNode objects with full content and metadata
+   - Edges contain semantic similarity scores and common keywords
+   - HDF5 storage with hierarchical structure: /metadata, /nodes, /edges
 
-3. **Querying (main.py + enhanced_graphrag.py)**:
-   - Find relevant URLs: Keyword overlap + embedding similarity.
-   - Expand: Add neighbors via graph traversal.
-   - Generate: Prompt Gemini with structured context (entities, snippets, relationships).
+3. **RAG System Loading**:
+   - Graph reconstruction from HDF5 into memory
+   - Entity creation from nodes, relationship mapping from edges
+   - NetworkX graph building for efficient traversal
+   - Keyword index construction for fast lookup
+
+4. **Query Processing**:
+   - Keyword matching and embedding similarity scoring
+   - Graph expansion to include relevant neighbors
+   - Context compilation with entities, relationships, and content snippets
+   - LLM generation with structured prompt including instructions and context
 
 ## Installation
 
 ### Prerequisites
 - Python 3.8+
 - uv (fast Python package manager and environment tool)
-- Google Gemini API key (from https://makersuite.google.com/app/apikey)
+- Google Gemini API key (from https://ai.dev/apikey)
 
 ### Steps (using uv)
 1. Clone the repository:
@@ -102,15 +116,8 @@ Key technical aspects:
    ```
    uv pip install -r requirements.txt
    ```
-   - Key deps: crawl4ai[all], sentence-transformers, networkx, scikit-learn, summa, spacy, google-genai, h5py, etc.
-   - Install spaCy model: `uv run python -m spacy download en_core_web_sm`
 
 5. Set environment variables in `.env`:
    ```
    gemini_api_key=your_api_key_here
    ```
-
-## Usage
-
-### Basic Crawl and Query
-Crawl and start interactive Q&A:
