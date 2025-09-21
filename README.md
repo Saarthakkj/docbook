@@ -40,9 +40,9 @@ Key technical aspects:
    - **Graph utilities**: `print_graph_structure()` for visualization, `find_parent_node()` for tree traversal.
 
 2. **graphrag.py**:
-   - **EnhancedEntity**: Dataclass with source_urls, keywords, content_snippet, embedding, depth, score.
-   - **EnhancedRelationship**: Dataclass with source, target, source_urls, common_keywords, semantic_similarity.
-   - **EnhancedGraphRAGSystem**: Main RAG class with:
+   - **Entity**: Dataclass with source_urls, keywords, content_snippet, embedding, depth.
+   - **Relationship**: Dataclass with source, target, source_urls, common_keywords, semantic_similarity.
+   - **GraphRAGSystem**: Main RAG class with:
      - Initialization with Graph object and Gemini API key
      - SentenceTransformer model loading for embeddings
      - NetworkX DiGraph construction for graph operations
@@ -50,7 +50,7 @@ Key technical aspects:
      - `load_from_kg_json()`: Creates entities from GraphNodes, relationships from edges
      - `retrieve_and_generate()`: Main query method combining retrieval and generation
      - `_find_relevant_urls()`: Multi-score ranking (keyword overlap + cosine similarity)
-     - `_expand_context_with_graph()`: Graph traversal to add neighbor nodes (top 2 per seed)
+     - `_expand_context_with_graph()`: Graph traversal to add neighbor nodes (top 5 per seed)
      - `_generate_enhanced_answer()`: Constructs detailed prompt with context sections for LLM
 
 3. **main.py**:
@@ -58,7 +58,7 @@ Key technical aspects:
    - **Graph persistence check**: Looks for existing `{name}_kg.h5` file to avoid re-crawling.
    - **Crawling workflow**: If no existing graph, runs `deepcrawl.deep_crawl()` and saves with `save_graph_hdf5()`.
    - **Graph loading**: Uses `load_graph_hdf5()` to reconstruct Graph object from HDF5.
-   - **RAG initialization**: Creates EnhancedGraphRAGSystem from loaded graph.
+   - **RAG initialization**: Creates GraphRAGSystem from loaded graph.
    - **Interactive loop**: Continuous Q&A interface with error handling and 'quit' command.
    - **Debug utilities**: `debug_save_process()` and `inspect_saved_graph()` for troubleshooting.
 
@@ -73,7 +73,7 @@ Key technical aspects:
 2. **Graph Construction**:
    - Nodes stored as GraphNode objects with full content and metadata
    - Edges contain semantic similarity scores and common keywords
-   - HDF5 storage with hierarchical structure: /metadata, /nodes, /edges
+   - HDF5 storage with hierarchical structure: /metadata, /nodes, /nodes_index, /edges
 
 3. **RAG System Loading**:
    - Graph reconstruction from HDF5 into memory
@@ -121,3 +121,24 @@ Key technical aspects:
    ```
    gemini_api_key=your_api_key_here
    ```
+
+## Usage
+
+Run a crawl and interactive query session (first run creates the HDF5 knowledge graph, later runs reuse it):
+
+```
+python main.py \
+  --url https://docs.crawl4ai.com/ \
+  --output_dir ./output \
+  --name crawl4ai_docs \
+  --max_depth 3 \
+  --max_pages 50
+```
+
+- Output file: `./output/crawl4ai_docs_kg.h5`.
+- Subsequent runs with the same `--name` and `--output_dir` load the graph directly (no re-crawl).
+- In the prompt, type `quit` to exit.
+
+Notes:
+- The environment variable name is lowercase and case-sensitive: `gemini_api_key`.
+- Embedding model: `'all-MiniLM-L6-v2'` via Sentence Transformers.

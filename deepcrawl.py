@@ -205,9 +205,6 @@ async def deep_crawl(doc_url: str, max_depth: Optional[int], max_pages: Optional
         
         root : GraphNode
         graph : Graph = Graph()
-        
-        # graph.metadata = {'root_url' : doc_url }
-
 
         print(f"deep crawl returned  : {len(results)} pages ")
         for i , result in enumerate(results):
@@ -327,14 +324,6 @@ def print_graph_structure(root: GraphNode):
         depth_counts[d] = depth_counts.get(d, 0) + 1
     for d in sorted(depth_counts):
         print(f"   Depth {d}: {depth_counts[d]} nodes")
-
-    # Score statistics
-    # if scores:
-    #     avg_score = sum(scores) / len(scores)
-    #     print(f"\n📊 Score Statistics:")
-    #     print(f"   Average Score: {avg_score:.3f}")
-    #     print(f"   Max Score: {max(scores):.3f}")
-    #     print(f"   Min Score: {min(scores):.3f}")
 
     # Connectivity stats
     print(f"\n📊 Connectivity:")

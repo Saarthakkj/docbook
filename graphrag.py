@@ -45,12 +45,13 @@ class Relationship:
     semantic_similarity: float
 
 class GraphRAGSystem:
-    def __init__(self, graph : Graph , gemini_api_key: str):
+    def __init__(self, graph : Graph , gemini_api_key: str, token_budget: Optional[int] = None):
         self.entities: Dict[str, Entity] = {}
         self.relationships: List[Relationship] = []
         self.knowledge_graph = nx.DiGraph()
         self.keyword_index = defaultdict(list)  # Keyword -> URLs that contain it
         self.graph = graph
+        self.token_budget: Optional[int] = token_budget
         
         # Initialize models
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -60,6 +61,21 @@ class GraphRAGSystem:
         chat = client.chats.create(model='gemini-2.0-flash')
         self.llm = chat
         
+    def _estimate_tokens_text(self, text: str) -> int:
+        """Rough token estimator: ~1 token per 4 characters as a safe upper bound."""
+        if not text:
+            return 0
+        # Use characters/4 to avoid underestimating for long words; clamp at >= 1 for non-empty
+        return max(1, len(text) // 4)
+
+    def _estimate_entity_tokens(self, entity: Entity) -> int:
+        """Estimate tokens contributed by an entity block in the prompt."""
+        url = entity.source_urls[0] if entity.source_urls else ""
+        header = self._extract_entity_name(url)
+        meta = ", ".join((entity.keywords or [])[:5])
+        overhead = len(header) + len(url) + len(meta) + 32  # headings + labels
+        return (overhead // 4) + self._estimate_tokens_text(entity.content_snippet or "")
+
     def _normalize_keyword(self, kw) -> str:
         """Convert keyword-like values (bytes, numpy scalars) to normalized lowercase str."""
         try:
@@ -174,11 +190,14 @@ class GraphRAGSystem:
     async def retrieve_and_generate(self, query: str, top_k: int = 10) -> str:
         """Enhanced query processing using both keywords and embeddings"""
         
+        if self.token_budget is not None:
+            print(f"[Budget] Token budget for this query: {self.token_budget} tokens")
+
         # Step 1: Find relevant URLs using multiple methods
         relevant_urls = await self._find_relevant_urls(query, top_k)
         
         # Step 2: Expand context using graph relationships
-        expanded_context = self._expand_context_with_graph(relevant_urls )
+        expanded_context = self._expand_context_with_graph(relevant_urls)
                 
         # Step 4: Generate answer using LLM
         answer = await self._generate_enhanced_answer(query, expanded_context)
@@ -244,40 +263,67 @@ class GraphRAGSystem:
             
         return top_urls
     
-    def _expand_context_with_graph(self, seed_urls: List[str] ) -> Dict:
-        """Expand context using graph relationships and high-value neighbors"""
-        
-        expanded_urls = set(seed_urls) # this seed_urls is top_k (here  , 5)
-        important_relationships = []
-        
-        # Find neighbors and high-value connections
+    def _expand_context_with_graph(self, seed_urls: List[str]) -> Dict:
+        """Expand context using graph relationships and high-value neighbors with optional token budget."""
+        expanded_urls: Set[str] = set()
+        important_relationships: List[Dict] = []
+
+        # Helper to try-include a URL respecting budget
+        used_tokens = 0
+        limit = self.token_budget if self.token_budget is not None else None
+        included_count_seeds = 0
+        included_count_neighbors = 0
+
+        def try_include(url: str) -> bool:
+            nonlocal used_tokens
+            if url not in self.entities:
+                return False
+            if url in expanded_urls:
+                return False
+            est = self._estimate_entity_tokens(self.entities[url])
+            if limit is not None and used_tokens + est > limit:
+                return False
+            expanded_urls.add(url)
+            used_tokens += est
+            return True
+
+        # Include seeds first
+        for url in seed_urls:
+            if try_include(url):
+                included_count_seeds += 1
+
+        if limit is not None:
+            print(f"[Budget] After seeds: included={included_count_seeds}, used={used_tokens}/{limit}")
+
+        # Then include up to 5 neighbors per seed
         for url in seed_urls:
             if url in self.knowledge_graph:
-                # Get direct neighbors
-                neighbors = list(self.knowledge_graph.neighbors(url))
-                all_connected = neighbors 
-                
-                # Add top neighbors based on weight and similarity
-                for neighbor in all_connected[:5]:  
-                    expanded_urls.add(neighbor)
-                    
-                    # for collecting relationship info
-                    if self.knowledge_graph.has_edge(url, neighbor):
-                        edge_data = self.knowledge_graph[url][neighbor]
-                    else:
-                        edge_data = self.knowledge_graph[neighbor][url]
-                    
-                    important_relationships.append({
-                        "source": url,
-                        "target": neighbor,
-                        "common_keywords": edge_data.get("common_keywords", []),
-                        "semantic_similarity": edge_data.get("semantic_similarity", 0.0)
-                    })
-                    
-        return {
-            "relationships": important_relationships,
-            "entities": [self.entities[url] for url in expanded_urls if url in self.entities]
-        }
+                neighbors = list(self.knowledge_graph.neighbors(url))[:5]
+                for neighbor in neighbors:
+                    if try_include(neighbor):
+                        included_count_neighbors += 1
+                        # Record relationship if present
+                        if self.knowledge_graph.has_edge(url, neighbor):
+                            edge_data = self.knowledge_graph[url][neighbor]
+                        elif self.knowledge_graph.has_edge(neighbor, url):
+                            edge_data = self.knowledge_graph[neighbor][url]
+                        else:
+                            edge_data = {}
+                        important_relationships.append({
+                            "source": url,
+                            "target": neighbor,
+                            "common_keywords": edge_data.get("common_keywords", []),
+                            "semantic_similarity": edge_data.get("semantic_similarity", 0.0)
+                        })
+                if limit is not None and used_tokens >= limit:
+                    break
+
+        if limit is not None:
+            print(f"[Budget] After neighbors: added={included_count_neighbors}, used={used_tokens}/{limit}")
+
+        # Build final entities list
+        entities = [self.entities[url] for url in expanded_urls if url in self.entities]
+        return {"relationships": important_relationships, "entities": entities}
 
 
     async def _generate_enhanced_answer(self, query: str, context: Dict) -> str:
@@ -338,6 +384,11 @@ class GraphRAGSystem:
         Answer:
         """
         
+        if self.token_budget is not None:
+            est_ctx_tokens = self._estimate_tokens_text(context_text + relationships_text)
+            overhead = self._estimate_tokens_text(prompt.replace(context_text, '').replace(relationships_text, ''))
+            print(f"[Budget] Prompt context tokens≈{est_ctx_tokens}, overhead≈{overhead}. Total≈{est_ctx_tokens + overhead} / limit={self.token_budget}")
+
         try:
             response = self.llm.send_message(prompt)
             return response.text
@@ -348,11 +399,11 @@ class GraphRAGSystem:
 
 
 # Convenience function for easy usage
-async def create_graphrag( graph : Graph ,  gemini_api_key: str) -> GraphRAGSystem:
+async def create_graphrag( graph : Graph ,  gemini_api_key: str, token_budget: Optional[int] = None) -> GraphRAGSystem:
     """Create and initialize GraphRAG system from kg.json file"""
     
     # Create and initialize system
-    rag_system = GraphRAGSystem(graph , gemini_api_key )
+    rag_system = GraphRAGSystem(graph , gemini_api_key, token_budget=token_budget)
     rag_system.load_from_kg_json()
     
     return rag_system 

@@ -8,7 +8,7 @@ import os
 import json
 import os
 from dotenv import load_dotenv
-from graphrag import EnhancedGraphRAGSystem, create_graphrag 
+from graphrag import GraphRAGSystem, create_graphrag 
 from deepcrawl import  save_graph_hdf5
 
 load_dotenv()
@@ -40,6 +40,7 @@ Examples :
     parser.add_argument("--output_dir" , type = str  , required = True, help = "output directory")
 
     parser.add_argument("--name" , type = str  , required = True, help = "name of your documentation")
+    parser.add_argument("--token_budget", type=int, default=None, help="Approximate token budget for context assembly")
 
 
     return parser.parse_args()
@@ -316,16 +317,7 @@ def load_graph_hdf5(filepath: str) -> Graph:
                     'semantic_similarity': sim
                 })
         return graph
-            
-    # Return the root node
-    # root = node_map.get(root_url)
-    # if not root:
-    #     raise ValueError(f"Root node {root_url} not found in loaded nodes")
-    
-    # print(
-    #     f"📂 Loaded graph from {filepath} with {len(node_map)} nodes (root: {root_url})"
-    # )
-    # return root
+
 
 def print_graph_nodes_sample(graph: Graph, limit: int = 10):
     """Print a small sample of nodes to verify that the loaded graph is not empty."""
@@ -370,10 +362,6 @@ async def main():
     print("🚀 Starting Docbook ")
     print("=" * 60)
     
-    
-    
-    
-    
     # Step 1: Load the knowledge graph from deepcrawl.py output
     print("📂 Loading graphRG system.....")
     
@@ -395,7 +383,8 @@ async def main():
 
     rag_system = await create_graphrag(
         graph,
-        gemini_api_key
+        gemini_api_key,
+        token_budget=args.token_budget
     )
     print("🤖 GraphRAG Query Interface Ready!")
     print(f"Ask questions about {args.name} documentation.")
