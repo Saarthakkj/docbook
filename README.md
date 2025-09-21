@@ -39,7 +39,7 @@ Key technical aspects:
    - **HDF5 persistence**: `save_graph_hdf5()` stores graph in hierarchical format with metadata, nodes (with embeddings/keywords), and edges.
    - **Graph utilities**: `print_graph_structure()` for visualization, `find_parent_node()` for tree traversal.
 
-2. **enhanced_graphrag.py**:
+2. **graphrag.py**:
    - **EnhancedEntity**: Dataclass with source_urls, keywords, content_snippet, embedding, depth, score.
    - **EnhancedRelationship**: Dataclass with source, target, source_urls, common_keywords, semantic_similarity.
    - **EnhancedGraphRAGSystem**: Main RAG class with:

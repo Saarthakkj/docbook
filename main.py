@@ -1,7 +1,3 @@
-"""
-GraphRAG Implementation for Crawl4AI Documentation
-Integrates deepcrawl.py output with graphrag_system.py for intelligent querying
-"""
 from deepcrawl import GraphNode , Graph
 import deepcrawl
 import asyncio
@@ -12,7 +8,7 @@ import os
 import json
 import os
 from dotenv import load_dotenv
-from enhanced_graphrag import EnhancedGraphRAGSystem, create_graphrag_from_kg_json 
+from graphrag import EnhancedGraphRAGSystem, create_graphrag 
 from deepcrawl import  save_graph_hdf5
 
 load_dotenv()
@@ -397,7 +393,7 @@ async def main():
         print(f"Knowledge graph saved to {kg_path}")
         # print_graph_nodes_sample(graph, limit=5)
 
-    rag_system = await create_graphrag_from_kg_json(
+    rag_system = await create_graphrag(
         graph,
         gemini_api_key
     )
