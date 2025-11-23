@@ -53,8 +53,8 @@ class GraphRAGSystem:
         self.graph = graph
         self.token_budget: Optional[int] = token_budget
         
-        # Initialize models
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Initialize models (heavier embedding model)
+        self.embedding_model = SentenceTransformer('all-mpnet-base-v2')
         
         # Initialize Gemini
         client = genai.Client(api_key=os.environ['gemini_api_key'])
@@ -218,20 +218,49 @@ class GraphRAGSystem:
         # Method 2: Semantic similarity (if embeddings exist)
         similarity_scores = {}
         query_embedding = self.embedding_model.encode(query)
+        # Ensure 1D for consistency
+        if isinstance(query_embedding, np.ndarray) and query_embedding.ndim > 1:
+            query_embedding = query_embedding.flatten()
         
         for url, entity in self.entities.items():
-            if entity.embedding is None : 
-                continue
             
-            # Convert entity embedding to numpy array if needed
-            entity_embedding = np.array(entity.embedding, dtype=np.float32)
-            
-            # Ensure both embeddings are 1D vectors for cosine similarity
-            if query_embedding.ndim > 1:
-                query_embedding = query_embedding.flatten()
-            if entity_embedding.ndim > 1:
-                entity_embedding = entity_embedding.flatten()
-            
+            # Convert entity embedding to numpy array if available
+            entity_embedding = None
+            if entity.embedding is not None:
+                try:
+                    entity_embedding = np.array(entity.embedding, dtype=np.float32)
+                except Exception:
+                    entity_embedding = None
+
+            # Ensure both embeddings are 1D vectors and match dimensions; otherwise re-embed with current model
+            if entity_embedding is not None:
+                if entity_embedding.ndim > 1:
+                    entity_embedding = entity_embedding.flatten()
+
+            # Re-embed if missing or dimension mismatch with current query embedding
+            needs_reembed = (
+                entity_embedding is None
+                or not isinstance(entity_embedding, np.ndarray)
+                or entity_embedding.size == 0
+                or entity_embedding.shape[0] != query_embedding.shape[0]
+            )
+
+            if needs_reembed:
+                # Fallback text to embed if content is unavailable
+                text_to_embed = (
+                    (entity.content_snippet or "").strip()
+                    or (" ".join(entity.keywords) if entity.keywords else "")
+                    or url
+                )
+                entity_embedding = self.embedding_model.encode(text_to_embed)
+                if isinstance(entity_embedding, np.ndarray) and entity_embedding.ndim > 1:
+                    entity_embedding = entity_embedding.flatten()
+                # Cache back to entity to avoid repeated re-embedding
+                try:
+                    self.entities[url].embedding = entity_embedding.tolist()
+                except Exception:
+                    pass
+
             # Calculate cosine similarity between 1D vectors
             similarity = np.dot(query_embedding, entity_embedding) / (
                 np.linalg.norm(query_embedding) * np.linalg.norm(entity_embedding)
